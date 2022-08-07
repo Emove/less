@@ -1,5 +1,5 @@
-//go:build !windows
-// +build !windows
+//go:build darwin || netbsd || freebsd || openbsd || dragonfly || linux
+// +build darwin netbsd freebsd openbsd dragonfly linux
 
 package transport
 
@@ -22,7 +22,7 @@ type transportServer struct {
 	connCnt atomic.AtomicInt64
 }
 
-func newTransportServer(ctx context.Context, opts *server.ServerOptions) TransportServer {
+func NewTransportServer(ctx context.Context, opts *server.ServerOptions) TransportServer {
 	return &transportServer{
 		ctx:  ctx,
 		opts: opts,
