@@ -1,6 +1,7 @@
 package less
 
 import (
+	"context"
 	"less/internal/server"
 	"less/proto"
 	"less/transport"
@@ -10,9 +11,12 @@ type Server struct {
 	addr    string
 	network string
 
-	opts server.ServerOptions
+	ctx        context.Context
+	cancelFunc context.CancelFunc
 
-	transport *transport.TransportServer
+	opts *server.ServerOptions
+
+	transport transport.TransportServer
 }
 
 func NewServer(network, addr string, ops ...ServerOption) *Server {
@@ -22,16 +26,32 @@ func NewServer(network, addr string, ops ...ServerOption) *Server {
 		op.Apply(&opts)
 	}
 
+	ctx, cancelFunc := context.WithCancel(context.Background())
+
 	srv := &Server{
-		network: network,
-		addr:    addr,
-		opts:    opts,
+		ctx:        ctx,
+		cancelFunc: cancelFunc,
+		network:    network,
+		addr:       addr,
+		opts:       &opts,
 	}
+
+	srv.transport = transport.NewTransportServer(srv.ctx, srv.opts)
 
 	return srv
 }
 
-func (srv *Server) Run() {
+func (srv *Server) Run() error {
+
+	if err := srv.transport.Serv(srv.network, srv.addr); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (srv *Server) Shutdown() {
+	srv.cancelFunc()
 }
 
 type ServerOption interface {
