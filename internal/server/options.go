@@ -1,9 +1,9 @@
 package server
 
 import (
-	"less/keepalive"
-	"less/proto"
-	"less/transport"
+	"less/pkg/codec"
+	"less/pkg/keepalive"
+	"less/pkg/transport"
 	"math"
 	"time"
 )
@@ -18,7 +18,7 @@ type ServerOptions struct {
 
 	KeepaliveParams keepalive.ServerParameters
 
-	Codec proto.Codec
+	Codec codec.Codec
 
 	OnConn      func(con transport.Connection)
 	OnConnClose func(con transport.Connection)

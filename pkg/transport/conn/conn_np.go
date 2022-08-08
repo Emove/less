@@ -1,11 +1,12 @@
 //go:build darwin || netbsd || freebsd || openbsd || dragonfly || linux
 // +build darwin netbsd freebsd openbsd dragonfly linux
 
-package transport
+package conn
 
 import (
 	"github.com/cloudwego/netpoll"
 	"github.com/cloudwego/netpoll/mux"
+	"less/pkg/transport"
 	"net"
 	"sync"
 	"time"
@@ -19,17 +20,17 @@ type connection struct {
 	sharedQueue *mux.ShardQueue
 }
 
-func wrapConnection(con netpoll.Connection) Connection {
+func wrapConnection(con netpoll.Connection) transport.Connection {
 	return &connection{
 		conn: con,
 	}
 }
 
-func (c *connection) Reader() Reader {
+func (c *connection) Reader() transport.Reader {
 	return c.conn.Reader()
 }
 
-func (c *connection) Writer() Writer {
+func (c *connection) Writer() transport.Writer {
 	w := writerPool.Get().(*writer)
 	w.sq = c.sharedQueue
 	w.delegate = netpoll.NewLinkBuffer()
@@ -61,7 +62,7 @@ func (c *connection) SetIdleTimeout(t time.Duration) error {
 
 var writerPool sync.Pool
 
-var _ Writer = (*writer)(nil)
+var _ transport.Writer = (*writer)(nil)
 
 func init() {
 	writerPool.New = func() interface{} {

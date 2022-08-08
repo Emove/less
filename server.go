@@ -3,7 +3,8 @@ package less
 import (
 	"context"
 	"less/internal/server"
-	"less/proto"
+	"less/pkg/codec"
+	transport2 "less/pkg/transport"
 	"less/transport"
 )
 
@@ -16,7 +17,7 @@ type Server struct {
 
 	opts *server.ServerOptions
 
-	transport transport.TransportServer
+	transport transport2.TransportServer
 }
 
 func NewServer(network, addr string, ops ...ServerOption) *Server {
@@ -90,7 +91,7 @@ func MaxReceiveMessageSize(size uint32) ServerOption {
 	})
 }
 
-func WithCodec(codec proto.Codec) ServerOption {
+func WithCodec(codec codec.Codec) ServerOption {
 	return newFuncServerOption(func(options *server.ServerOptions) {
 		options.Codec = codec
 	})

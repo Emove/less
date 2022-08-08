@@ -1,8 +1,8 @@
-package proto
+package codec
 
 import (
 	"context"
-	"less/transport"
+	"less/pkg/transport"
 )
 
 type Codec interface {

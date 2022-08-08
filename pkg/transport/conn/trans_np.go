@@ -1,13 +1,14 @@
 //go:build darwin || netbsd || freebsd || openbsd || dragonfly || linux
 // +build darwin netbsd freebsd openbsd dragonfly linux
 
-package transport
+package conn
 
 import (
 	"context"
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/cloudwego/netpoll"
 	"less/internal/server"
+	"less/pkg/transport"
 	"less/utils/atomic"
 )
 
@@ -22,7 +23,7 @@ type transportServer struct {
 	connCnt atomic.AtomicInt64
 }
 
-func NewTransportServer(ctx context.Context, opts *server.ServerOptions) TransportServer {
+func NewTransportServer(ctx context.Context, opts *server.ServerOptions) transport.TransportServer {
 	return &transportServer{
 		ctx:  ctx,
 		opts: opts,

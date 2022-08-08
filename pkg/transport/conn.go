@@ -35,7 +35,7 @@ type Writer interface {
 	MallocLength() (length int)
 
 	// Flush 提交 Writer 中写入的数据
-	Flush()
+	Flush() (err error)
 
 	// Release 释放 Writer
 	Release()

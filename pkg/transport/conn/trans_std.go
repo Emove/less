@@ -1,13 +1,13 @@
 //go:build windows
 // +build windows
 
-package transport
+package conn
 
 import (
 	"context"
-	"io"
 	"less/internal/server"
-	"less/proto"
+	"less/pkg/proto"
+	"less/pkg/transport"
 	"less/utils/atomic"
 	"net"
 )
@@ -22,9 +22,9 @@ type transportServer struct {
 	proto proto.Protocol
 }
 
-var _ TransportServer = (*transportServer)(nil)
+var _ transport.TransportServer = (*transportServer)(nil)
 
-func newTransportServer(ctx context.Context, opts *server.ServerOptions) TransportServer {
+func newTransportServer(ctx context.Context, opts *server.ServerOptions) transport.TransportServer {
 	server := &transportServer{
 		ctx:   ctx,
 		opts:  opts,
@@ -70,20 +70,20 @@ func (s *transportServer) onConn(conn net.Conn) {
 		return
 	}
 
-	s. := NewConnection(conn)
+	//s. := NewConnection(conn)
 
 }
 
 func (s *transportServer) read() {
-	header := make([]byte, s.proto.HeaderLength())
-	if _, err := s.conn.(io.Reader).Read(header); err != nil {
-		s.stop()
-		return
-	}
-	body := make([]byte, int(s.proto.BodySize(header)))
-	if _, err := io.ReadFull(s.conn, body); err != nil {
-		s.stop()
-		return
-	}
-	// TODO
+	//header := make([]byte, s.proto.HeaderLength())
+	//if _, err := s.conn.(io.Reader).Read(header); err != nil {
+	//	s.stop()
+	//	return
+	//}
+	//body := make([]byte, int(s.proto.BodySize(header)))
+	//if _, err := io.ReadFull(s.conn, body); err != nil {
+	//	s.stop()
+	//	return
+	//}
+	//// TODO
 }
