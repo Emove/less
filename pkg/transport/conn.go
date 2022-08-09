@@ -5,36 +5,36 @@ import (
 	"time"
 )
 
-// Reader an abstraction to read data from transport.Connection
+// Reader an abstraction to read data from transport.Connection.
 //
-// All read operations are implemented as blocking
-// The return value is guaranteed to meet the requirements or an error will be returned
+// All read operations are implemented as blocking.
+// The return value is guaranteed to meet the requirements or an error will be returned.
 type Reader interface {
 
-	// Next returns the next n bytes when the connection data is ready, and returns the original buffer
+	// Next returns the next n bytes when the connection data is ready, and returns the original buffer.
 	Next(n int) (buf []byte, err error)
 
-	// Peek returns the next n bytes but not advancing the reader
+	// Peek returns the next n bytes but not advancing the reader.
 	Peek(n int) (buf []byte, err error)
 
-	// Skip skips the next n bytes
+	// Skip skips the next n bytes.
 	Skip(n int) (err error)
 
-	// Until reads until the first occurrence of delim in the connection
-	// Until returns an error when the size of line over than server.ServerOptions#MaxMessageSize or read timeout
+	// Until reads until the first occurrence of delim in the connection.
+	// Until returns an error when the size of line over than server.ServerOptions#MaxMessageSize or read timeout.
 	Until(delim byte) (line []byte, err error)
 
-	// Release the memory space occupied by all read slices
+	// Release releases the memory space occupied by all read slices.
 	Release()
 }
 
-// Writer an abstraction to write data to transport.Connection
+// Writer an abstraction to write data to transport.Connection.
 type Writer interface {
 
-	// Write writes bytes to buffer directly
+	// Write writes bytes to buffer directly.
 	Write(buf []byte) (n int, err error)
 
-	// Malloc returns a slice containing the next n bytes from the buffer
+	// Malloc returns a slice containing the next n bytes from the buffer.
 	Malloc(n int) (buf []byte)
 
 	// MallocLength returns the total length of the written data that has not yet been submitted in the writer.
