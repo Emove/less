@@ -5,63 +5,69 @@ import (
 	"time"
 )
 
+// Reader an abstraction to read data from transport.Connection
+//
+// All read operations are implemented as blocking
+// The return value is guaranteed to meet the requirements or an error will be returned
 type Reader interface {
 
-	// Next 返回接下来的 n 个字节
+	// Next returns the next n bytes when the connection data is ready, and returns the original buffer
 	Next(n int) (buf []byte, err error)
 
-	// Peek 返回 Reader 中前 n 个字节
+	// Peek returns the next n bytes but not advancing the reader
 	Peek(n int) (buf []byte, err error)
 
-	// Skip 跳过前 n 个字节
+	// Skip skips the next n bytes
 	Skip(n int) (err error)
 
-	// Until 阻塞读取数据直到遇到第一个 delim 时返回
+	// Until reads until the first occurrence of delim in the connection
+	// Until returns an error when the size of line over than server.ServerOptions#MaxMessageSize or read timeout
 	Until(delim byte) (line []byte, err error)
 
-	// Release 释放 Reader
-	Release() (err error)
-}
-
-type Writer interface {
-
-	// Write 写入 buf
-	Write(buf []byte) (n int, err error)
-
-	// Malloc 分配 n 个字节的空间
-	Malloc(n int) (buf []byte)
-
-	// MallocLength 返回已分配的空间长度
-	MallocLength() (length int)
-
-	// Flush 提交 Writer 中写入的数据
-	Flush() (err error)
-
-	// Release 释放 Writer
+	// Release the memory space occupied by all read slices
 	Release()
 }
 
-// Connection 对原生 net.Conn 和 netpoll.Connection 的封装
+// Writer an abstraction to write data to transport.Connection
+type Writer interface {
+
+	// Write writes bytes to buffer directly
+	Write(buf []byte) (n int, err error)
+
+	// Malloc returns a slice containing the next n bytes from the buffer
+	Malloc(n int) (buf []byte)
+
+	// MallocLength returns the total length of the written data that has not yet been submitted in the writer.
+	MallocLength() (length int)
+
+	// Flush will submit all written data to raw connection.
+	Flush() (err error)
+
+	// Release the memory space occupied by all write slices.
+	Release()
+}
+
+// Connection wrapper for net.Conn and netpoll.Connection.
 type Connection interface {
-	// Reader 返回 Reader 对象
+	// Reader returns a Reader.
 	Reader() Reader
 
-	// Writer 返回 Writer 对象
+	// Writer returns a Writer.
 	Writer() Writer
 
-	// Close 关闭链接
+	// Close closes the connection.
 	Close() error
 
-	// LocalAddr 返回本地监听地址
+	// LocalAddr returns the local network address, same as net.Conn#LocalAddr.
 	LocalAddr() net.Addr
 
-	// RemoteAddr 返回对端地址
+	// RemoteAddr returns the remote network address, same as net.Conn#RemoteAddr.
 	RemoteAddr() net.Addr
 
-	// SetReadTimeout 设置读超时时间
-	// 参数为零值时，将不设置读超时时间
+	// SetReadTimeout sets the timeout for future Read calls wait.
+	// A zero value for timeout means Reader will not be timeout.
 	SetReadTimeout(t time.Duration) error
 
-	// SetIdleTimeout 设置链接的空闲时间
+	// SetIdleTimeout sets the idle timeout of connections.
 	SetIdleTimeout(t time.Duration) error
 }
