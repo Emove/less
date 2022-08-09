@@ -23,7 +23,7 @@ func TestConnection_Reader(t *testing.T) {
 		_ = serverConn.Close()
 	}(serverConn)
 
-	_, err = pair.client.Write([]byte("hello! I'm client"))
+	_, err = pair.client.Write([]byte("hello! I'm client!"))
 	if err != nil {
 		t.Fatalf("client write data error: %s", err.Error())
 	}
@@ -31,29 +31,117 @@ func TestConnection_Reader(t *testing.T) {
 	reader := serverConn.Reader()
 	firstSixByte, err := reader.Next(6)
 	if err != nil {
-		t.Fatalf("conn connection reader occur error when read next n byte: %s", err.Error())
+		t.Fatalf("connection reader error occur when read next n byte: %s", err.Error())
 	}
-	// expected output "hello!"
-	t.Logf("first 6 byte is: %s", string(firstSixByte))
+	t.Logf("first 6 byte, want: hello!, got: %s", string(firstSixByte))
 
 	if err = reader.Skip(1); err != nil {
 		// skip a space
-		t.Fatalf("conn connection reader occur error when read skip n byte: %s", err.Error())
+		t.Fatalf("connection reader error occur when read skip n byte: %s", err.Error())
 	}
 
 	peek, err := reader.Peek(3)
 	if err != nil {
-		t.Fatalf("conn connection reader occur error when read peek n byte: %s", err.Error())
+		t.Fatalf("connection reader error occur when read peek n byte: %s", err.Error())
 	}
-	// expected output "I'm"
-	t.Logf("peek 3 byte is: %s", string(peek))
+	t.Logf("peek 3 byte, want: I'm, got: %s", string(peek))
 
 	until, err := reader.Until('t')
 	if err != nil {
-		t.Fatalf("conn connection reader occur error when read until 't': %s", err.Error())
+		t.Fatalf("connection reader error occur when read until 't': %s", err.Error())
 	}
-	// expected output "I'm client"
-	t.Logf("until 't' is: %s", string(until))
+	t.Logf("until 't', want: I'm client, got: %s", string(until))
+
+	last, err := reader.Next(1)
+	if err != nil {
+		t.Fatalf("connection reader error occur when read last byte: %s", err.Error())
+	}
+	t.Logf("until 't', want: !, got: %s", string(last))
+}
+
+func TestConnection_Writer(t *testing.T) {
+	pair, err := prepare()
+	if err != nil {
+		t.Fatalf("prepare tcp connection error: %s", err.Error())
+	}
+	defer func() {
+		// close tcp conn
+		_ = pair.client.Close()
+	}()
+
+	serverConn := wrapConnection(pair.server)
+	defer func(serverConn transport.Connection) {
+		_ = serverConn.Close()
+	}(serverConn)
+
+	writer := serverConn.Writer()
+	_, err = writer.Write([]byte("Hi! "))
+	if err != nil {
+		t.Fatalf("connection writer error occur when write bytes: %s", err.Error())
+	}
+	malloc := writer.Malloc(5)
+	malloc[0] = 'T'
+	malloc[1] = 'h'
+	malloc[2] = 'i'
+	malloc[3] = 's'
+	malloc[4] = ' '
+
+	_, err = writer.Write([]byte("server!"))
+	if err != nil {
+		t.Fatalf("connection writer error occur when write bytes: %s", err.Error())
+	}
+
+	total := writer.MallocLength()
+	t.Logf("total write %d bytes", total)
+
+	err = writer.Flush()
+	if err != nil {
+		t.Fatalf("connection writer error occur when flush: %s", err.Error())
+	}
+
+	clientReadBuf := make([]byte, total)
+	_, err = pair.client.Read(clientReadBuf)
+	if err != nil {
+		t.Fatalf("connection writer error occur when flush: %s", err.Error())
+	}
+	t.Logf("client read: %s", string(clientReadBuf))
+
+	more := make([]byte, 1)
+	_ = pair.client.SetReadDeadline(time.Now().Add(5 * time.Millisecond))
+	_, err = pair.client.Read(more)
+	if err != nil {
+		t.Logf("there have no more bytes")
+		return
+	}
+	t.Errorf("read more byte: %s", string(more))
+}
+
+func TestConnection_Writer_FlushErr(t *testing.T) {
+	pair, err := prepare()
+	if err != nil {
+		t.Fatalf("prepare tcp connection error: %s", err.Error())
+	}
+	defer func() {
+		_ = pair.client.Close()
+	}()
+
+	serverConn := wrapConnection(pair.server)
+	//defer func(serverConn transport.Connection) {
+	//	_ = serverConn.Close()
+	//}(serverConn)
+
+	writer := serverConn.Writer()
+	_, err = writer.Write([]byte("test"))
+	if err != nil {
+		t.Fatalf("connection writer error occur when write bytes: %s", err.Error())
+	}
+
+	_ = pair.server.Close()
+
+	err = writer.Flush()
+	if err != nil {
+		t.Logf("connection writer error occur when flush: %s", err.Error())
+	}
 }
 
 type ConnPair struct {
