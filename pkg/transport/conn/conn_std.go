@@ -4,7 +4,6 @@
 package conn
 
 import (
-	"io"
 	"less/pkg/transport"
 	"net"
 	"sync"
@@ -158,7 +157,7 @@ func (r *reader) ensureReadable(n int) error {
 		r.growth(want + r.writeIndex - len(r.buff))
 	}
 
-	_, err := io.ReadFull(r.con.delegate, r.buff[r.writeIndex:r.writeIndex+want])
+	_, err := r.con.delegate.Read(r.buff[r.writeIndex : r.writeIndex+want])
 	if err != nil {
 		return err
 	}
