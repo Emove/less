@@ -7,9 +7,9 @@ import (
 )
 
 func TestGenericProtocol_BodySize(t *testing.T) {
-	proto := GenericProtocol{}
+	proto := GenericProtocol
 	value := uint32(math.MaxUint32)
-	header := make([]byte, 4, 4)
+	header := make([]byte, proto.HeaderLength())
 	binary.BigEndian.PutUint32(header, value)
 
 	if value != proto.BodySize(header) {
