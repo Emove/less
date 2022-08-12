@@ -22,7 +22,7 @@ type Reader interface {
 
 	// Until reads until the first occurrence of delim in the connection.
 	// Until returns an error when the size of line over than server.ServerOptions#MaxMessageSize or read timeout.
-	Until(delim byte) (line []byte, err error)
+	//Until(delim byte) (line []byte, err error)
 
 	// Release releases the memory space occupied by all read slices.
 	Release()
@@ -47,9 +47,12 @@ type Writer interface {
 	Release()
 }
 
+type OnRequest func(r Reader) error
+
 // Connection wrapper for net.Conn and netpoll.Connection.
 type Connection interface {
-	// Reader returns a Reader.
+
+	// Reader returns a Reader with buffer size limit.
 	Reader() Reader
 
 	// Writer returns a Writer.
@@ -67,7 +70,4 @@ type Connection interface {
 	// SetReadTimeout sets the timeout for future Read calls wait.
 	// A zero value for timeout means Reader will not be timeout.
 	SetReadTimeout(t time.Duration) error
-
-	// SetIdleTimeout sets the idle timeout of connections.
-	SetIdleTimeout(t time.Duration) error
 }

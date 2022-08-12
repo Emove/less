@@ -18,12 +18,13 @@ func TestConnection_Reader(t *testing.T) {
 		_ = pair.client.Close()
 	}()
 
-	serverConn := wrapConnection(pair.server)
+	serverConn := WrapConnection(pair.server)
 	defer func(serverConn transport.Connection) {
 		_ = serverConn.Close()
 	}(serverConn)
 
-	_, err = pair.client.Write([]byte("hello! I'm client!"))
+	content := []byte("hello! I'm client!")
+	_, err = pair.client.Write(content)
 	if err != nil {
 		t.Fatalf("client write data error: %s", err.Error())
 	}
@@ -46,17 +47,17 @@ func TestConnection_Reader(t *testing.T) {
 	}
 	t.Logf("peek 3 byte, want: I'm, got: %s", string(peek))
 
-	until, err := reader.Until('t')
-	if err != nil {
-		t.Fatalf("connection reader error occur when read until 't': %s", err.Error())
-	}
-	t.Logf("until 't', want: I'm client, got: %s", string(until))
+	//until, err := reader.Until('t')
+	//if err != nil {
+	//	t.Fatalf("connection reader error occur when read until 't': %s", err.Error())
+	//}
+	//t.Logf("until 't', want: I'm client, got: %s", string(until))
 
-	last, err := reader.Next(1)
+	last, err := reader.Next(11)
 	if err != nil {
 		t.Fatalf("connection reader error occur when read last byte: %s", err.Error())
 	}
-	t.Logf("until 't', want: !, got: %s", string(last))
+	t.Logf("next all, want: I'm client!, got: %s", string(last))
 }
 
 func TestConnection_Writer(t *testing.T) {
@@ -69,7 +70,7 @@ func TestConnection_Writer(t *testing.T) {
 		_ = pair.client.Close()
 	}()
 
-	serverConn := wrapConnection(pair.server)
+	serverConn := WrapConnection(pair.server)
 	defer func(serverConn transport.Connection) {
 		_ = serverConn.Close()
 	}(serverConn)
@@ -125,7 +126,7 @@ func TestConnection_Writer_FlushErr(t *testing.T) {
 		_ = pair.client.Close()
 	}()
 
-	serverConn := wrapConnection(pair.server)
+	serverConn := WrapConnection(pair.server)
 	//defer func(serverConn transport.Connection) {
 	//	_ = serverConn.Close()
 	//}(serverConn)

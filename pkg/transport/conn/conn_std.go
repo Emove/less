@@ -4,7 +4,6 @@
 package conn
 
 import (
-	"context"
 	"io"
 	"less/pkg/transport"
 	"net"
@@ -12,42 +11,30 @@ import (
 	"time"
 )
 
-// wrapConnection wrap net.Conn to transport.Connection
-func wrapConnection(conn net.Conn) transport.Connection {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	con := &connection{
-		rawConn:    conn,
-		ctx:        ctx,
-		cancelFunc: cancelFunc,
-		writeChan:  make(chan *writeRequest, 1),
+// WrapConnection wrap net.Conn to transport.Connection
+func WrapConnection(conn net.Conn) transport.Connection {
+	return &connection{
+		delegate: conn,
 	}
-
-	go con.waitWrite()
-
-	return con
 }
 
 var _ transport.Connection = (*connection)(nil)
 
 // connection implements transport.Connection
 type connection struct {
-	rawConn net.Conn
-
-	ctx        context.Context
-	cancelFunc context.CancelFunc
-
-	// serialize write request
-	writeChan chan *writeRequest
+	delegate net.Conn
 
 	readTimeout time.Duration
-	idleTimeout time.Duration
 }
 
 // Reader returns a reader
 func (c *connection) Reader() transport.Reader {
 	r := readerPool.Get().(*reader)
 	r.con = c
-	r.buff = make([]byte, 4096)
+	r.timeout = c.readTimeout
+	r.buff = make([]byte, 1024)
+	r.readIndex = 0
+	r.writeIndex = 0
 	return r
 }
 
@@ -55,23 +42,23 @@ func (c *connection) Reader() transport.Reader {
 func (c *connection) Writer() transport.Writer {
 	w := writerPool.Get().(*writer)
 	w.con = c
+	w.buff = make([]byte, 1024)
 	return w
 }
 
 // Close closes the net.Conn
 func (c *connection) Close() error {
-	c.cancelFunc()
-	return c.rawConn.Close()
+	return c.delegate.Close()
 }
 
 // LocalAddr returns the local address
 func (c *connection) LocalAddr() net.Addr {
-	return c.rawConn.LocalAddr()
+	return c.delegate.LocalAddr()
 }
 
 // RemoteAddr returns the remote address
 func (c *connection) RemoteAddr() net.Addr {
-	return c.rawConn.RemoteAddr()
+	return c.delegate.RemoteAddr()
 }
 
 // SetReadTimeout sets the timeout for future Read calls wait
@@ -82,18 +69,8 @@ func (c *connection) SetReadTimeout(t time.Duration) error {
 	return nil
 }
 
-//SetIdleTimeout sets the idle timeout of connections.
-func (c *connection) SetIdleTimeout(t time.Duration) error {
-	if t >= 0 {
-		c.idleTimeout = t
-	}
-	return nil
-}
-
 var readerPool = sync.Pool{
-	New: func() interface{} {
-		return &reader{}
-	},
+	New: func() interface{} { return &reader{} },
 }
 
 var _ transport.Reader = (*reader)(nil)
@@ -101,8 +78,8 @@ var _ transport.Reader = (*reader)(nil)
 // reader implements Reader
 // fixme: handle read timeout for all read functions
 type reader struct {
-	sync.Mutex
 	con        *connection
+	timeout    time.Duration
 	buff       []byte
 	readIndex  int
 	writeIndex int
@@ -155,6 +132,10 @@ func (r *reader) Until(delim byte) (line []byte, err error) {
 	return
 }
 
+func (r *reader) Length() int {
+	return len(r.buff)
+}
+
 // Release releases the reader buffer and reuse reader
 func (r *reader) Release() {
 	r.con = nil
@@ -165,31 +146,35 @@ func (r *reader) Release() {
 }
 
 func (r *reader) ensureReadable(n int) error {
-	remain := cap(r.buff) - r.writeIndex
-	if remain < n {
-		r.growth(n - remain)
-	}
-
-	if r.writeIndex > r.readIndex {
+	readable := r.writeIndex - r.readIndex
+	if readable >= n {
+		// enough
 		return nil
 	}
 
-	_, err := io.ReadFull(r.con.rawConn, r.buff[r.writeIndex:r.writeIndex+n])
+	want := n - readable
+
+	if len(r.buff)-r.writeIndex < want {
+		r.growth(want + r.writeIndex - len(r.buff))
+	}
+
+	_, err := io.ReadFull(r.con.delegate, r.buff[r.writeIndex:r.writeIndex+want])
 	if err != nil {
 		return err
 	}
-	r.writeIndex += n
+	r.writeIndex += want
 	return nil
 }
 
-func (r *reader) growth(n int) {
-	//newCap := cap(r.buff) + n
-	//buf := make([]byte, newCap)
+func (r *reader) growth(want int) {
+	//l := len(r.buff)
+	//l <<= 1
+	//buf := make([]byte, l)
 	//copy(buf, r.buff)
+	//
 	//r.buff = buf
-
 	// growing by slice default strategy
-	buf := make([]byte, n+1)
+	buf := make([]byte, want)
 	r.buff = append(r.buff, buf...)
 }
 
@@ -198,6 +183,7 @@ var writerPool = sync.Pool{
 		return &writer{}
 	},
 }
+
 var _ transport.Writer = (*writer)(nil)
 
 // writer implements transport.Writer
@@ -234,7 +220,8 @@ func (w *writer) MallocLength() (length int) {
 
 // Flush writes all malloc data to net.Conn
 func (w *writer) Flush() error {
-	return w.con.write(w.buff)
+	_, err := w.con.delegate.Write(w.buff[:w.writeIndex])
+	return err
 }
 
 // Release releases the buffer and reuse writer
@@ -242,45 +229,11 @@ func (w *writer) Release() {
 	w.con = nil
 	w.buff = nil
 	w.writeIndex = 0
-	writerPool.Put(w)
 }
 
 func (w *writer) ensureWriteable(n int) {
 	if len(w.buff)-w.writeIndex < n {
 		buf := make([]byte, n)
 		w.buff = append(w.buff, buf...)
-	}
-}
-
-type writeRequest struct {
-	data    []byte
-	errChan chan<- error
-}
-
-func (c *connection) write(data []byte) (err error) {
-	errChan := make(chan error, 0)
-	ctx := &writeRequest{
-		data:    data,
-		errChan: errChan,
-	}
-	c.writeChan <- ctx
-	for {
-		select {
-		case err = <-errChan:
-			close(errChan)
-			return
-		}
-	}
-}
-
-func (c *connection) waitWrite() {
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		case ctx := <-c.writeChan:
-			_, err := c.rawConn.Write(ctx.data)
-			ctx.errChan <- err
-		}
 	}
 }
