@@ -1,21 +1,21 @@
 //go:build darwin || netbsd || freebsd || openbsd || dragonfly || linux
 // +build darwin netbsd freebsd openbsd dragonfly linux
 
-package conn
+package transrv
 
 import (
 	"context"
-	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/cloudwego/netpoll"
-	"less/internal/server"
 	"less/pkg/transport"
+	"less/pkg/transport/conn"
+	"less/pkg/transport/trans"
 	"less/utils/atomic"
 )
 
 type transportServer struct {
 	ctx context.Context
 
-	opts *server.ServerOptions
+	opts *transport.TransServerOption
 
 	listener  netpoll.Listener
 	eventLoop netpoll.EventLoop
@@ -23,7 +23,7 @@ type transportServer struct {
 	connCnt atomic.AtomicInt64
 }
 
-func NewTransportServer(ctx context.Context, opts *server.ServerOptions) transport.TransportServer {
+func NewTransportServer(ctx context.Context, opts *transport.TransServerOption) transport.TransServer {
 	return &transportServer{
 		ctx:  ctx,
 		opts: opts,
@@ -66,39 +66,17 @@ func (s *transportServer) Stop() {
 }
 
 func (s *transportServer) onRequest(ctx context.Context, con netpoll.Connection) error {
-	conn := wrapConnection(con)
-	r := conn.Reader()
-	msg, err := s.opts.Codec.Decode(ctx, r)
+	err := trans.NewTransportHandler(s.opts, conn.WrapConnection(con)).OnRequest()
 	if err != nil {
 		_ = con.Close()
-		return nil
 	}
-	_ = r.Release()
-
-	gopool.Go(func() {
-		res := s.opts.OnMessage(msg)
-
-		if res == nil {
-			return
-		}
-
-		w := conn.Writer()
-		err = s.opts.Codec.Encode(ctx, res, w)
-		if err != nil {
-			w.Release()
-			return
-		}
-		w.Flush()
-		w.Release()
-	})
-
 	return nil
 }
 
 func (s *transportServer) onConn(ctx context.Context, con netpoll.Connection) context.Context {
 	s.connCnt.Inc()
 	_ = con.AddCloseCallback(func(connection netpoll.Connection) error {
-		s.opts.OnConnClose(wrapConnection(con))
+		s.opts.OnConnClose(conn.WrapConnection(con))
 		s.connCnt.Dec()
 		return nil
 	})

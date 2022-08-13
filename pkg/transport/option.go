@@ -1,14 +1,12 @@
-package server
+package transport
 
 import (
-	"less/pkg/codec"
 	"less/pkg/keepalive"
-	"less/pkg/transport"
 	"math"
 	"time"
 )
 
-type ServerOptions struct {
+type TransServerOption struct {
 	MaxConnectionSize     uint32
 	MaxSendMessageSize    uint32
 	MaxReceiveMessageSize uint32
@@ -18,14 +16,15 @@ type ServerOptions struct {
 
 	KeepaliveParams keepalive.ServerParameters
 
-	Codec codec.Codec
+	Codec Codec
 
-	OnConn      func(con transport.Connection)
-	OnConnClose func(con transport.Connection)
-	OnMessage   func(request interface{}) (response interface{})
+	OnConn      func(con Connection)
+	OnConnClose func(con Connection)
+
+	OnMessage OnMessage
 }
 
-var DefaultServerOptions = ServerOptions{
+var DefaultTransSrvOptions = &TransServerOption{
 	MaxConnectionSize:     math.MaxUint32,
 	MaxSendMessageSize:    1024 * 1024 * 4,
 	MaxReceiveMessageSize: 1024 * 1024 * 4,

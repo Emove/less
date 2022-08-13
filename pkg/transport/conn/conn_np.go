@@ -5,36 +5,26 @@ package conn
 
 import (
 	"github.com/cloudwego/netpoll"
-	"github.com/cloudwego/netpoll/mux"
 	"less/pkg/transport"
 	"net"
 	"sync"
 	"time"
 )
 
-type connection struct {
-	conn netpoll.Connection
-
-	idleTimeout time.Duration
-
-	sharedQueue *mux.ShardQueue
-}
-
-func wrapConnection(con netpoll.Connection) transport.Connection {
-	return &connection{
-		conn: con,
-	}
+func WrapConnection(con netpoll.Connection) transport.Connection {
+	c := connPool.Get().(*connection)
+	c.conn = con
+	return c
 }
 
 func (c *connection) Reader() transport.Reader {
-	return c.conn.Reader()
+	c.r.delegate = c.conn.Reader()
+	return c.r
 }
 
 func (c *connection) Writer() transport.Writer {
-	w := writerPool.Get().(*writer)
-	w.sq = c.sharedQueue
-	w.delegate = netpoll.NewLinkBuffer()
-	return w
+	c.w.delegate = c.conn.Writer()
+	return c.w
 }
 
 func (c *connection) Close() error {
@@ -53,26 +43,8 @@ func (c *connection) SetReadTimeout(t time.Duration) error {
 	return c.conn.SetReadTimeout(t)
 }
 
-func (c *connection) SetIdleTimeout(t time.Duration) error {
-	if t >= 0 {
-		c.idleTimeout = t
-	}
-	return nil
-}
+func (c *connection) Recycle() {
 
-var writerPool sync.Pool
-
-var _ transport.Writer = (*writer)(nil)
-
-func init() {
-	writerPool.New = func() interface{} {
-		return &writer{}
-	}
-}
-
-type writer struct {
-	delegate netpoll.Writer
-	sq       *mux.ShardQueue
 }
 
 func (w *writer) Write(buf []byte) (n int, err error) {
@@ -88,20 +60,12 @@ func (w *writer) MallocLength() int {
 	return w.delegate.MallocLen()
 }
 
-func (w *writer) Flush() {
-	w.sq.Add(func() (buf netpoll.Writer, isNil bool) {
-		return w.delegate, w.delegate.MallocLen() > 0
-	})
+func (w *writer) Flush() error {
+	return w.delegate.Flush()
 }
 
 func (w *writer) Release() {
-	w.sq = nil
 	w.delegate = nil
-	writerPool.Put(w)
-}
-
-type reader struct {
-	delegate netpoll.Reader
 }
 
 func (r *reader) Next(n int) (buf []byte, err error) {
@@ -120,6 +84,36 @@ func (r *reader) Until(delim byte) (line []byte, err error) {
 	return r.delegate.Until(delim)
 }
 
-func (r *reader) Release() error {
-	return r.delegate.Release()
+func (r *reader) Release() {
+	_ = r.delegate.Release()
+}
+
+var connPool = sync.Pool{
+	New: func() interface{} {
+		return &connection{
+			r: &reader{},
+			w: &writer{},
+		}
+	},
+}
+
+// connection implements transport.Connection
+type connection struct {
+	conn netpoll.Connection
+	r    *reader
+	w    *writer
+}
+
+var _ transport.Reader = (*reader)(nil)
+
+// reader implements transport.Reader
+type reader struct {
+	delegate netpoll.Reader
+}
+
+var _ transport.Writer = (*writer)(nil)
+
+// writer implements transport.Writer
+type writer struct {
+	delegate netpoll.Writer
 }

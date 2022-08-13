@@ -1,23 +1,19 @@
 package less
 
 import (
-	"context"
 	"less/internal/server"
-	"less/pkg/codec"
-	transport2 "less/pkg/transport"
-	"less/transport"
+	"less/pkg/middleware"
+	"less/pkg/transport"
+	"less/pkg/transport/transrv"
 )
 
 type Server struct {
 	addr    string
 	network string
 
-	ctx        context.Context
-	cancelFunc context.CancelFunc
-
 	opts *server.ServerOptions
 
-	transport transport2.TransportServer
+	transport transport.TransServer
 }
 
 func NewServer(network, addr string, ops ...ServerOption) *Server {
@@ -27,17 +23,14 @@ func NewServer(network, addr string, ops ...ServerOption) *Server {
 		op.Apply(&opts)
 	}
 
-	ctx, cancelFunc := context.WithCancel(context.Background())
-
 	srv := &Server{
-		ctx:        ctx,
-		cancelFunc: cancelFunc,
-		network:    network,
-		addr:       addr,
-		opts:       &opts,
+		network: network,
+		addr:    addr,
+		opts:    &opts,
 	}
 
-	srv.transport = transport.NewTransportServer(srv.ctx, srv.opts)
+	// pass in msgHandler
+	srv.transport = transrv.NewTransportServer(srv.opts.TransSrvOps, nil)
 
 	return srv
 }
@@ -52,7 +45,7 @@ func (srv *Server) Run() error {
 }
 
 func (srv *Server) Shutdown() {
-	srv.cancelFunc()
+	srv.transport.Stop()
 }
 
 type ServerOption interface {
@@ -73,26 +66,44 @@ func (fso *funcServerOption) Apply(so *server.ServerOptions) {
 	fso.f(so)
 }
 
+func WithOnMessage(onMessage transport.OnMessage) ServerOption {
+	return newFuncServerOption(func(options *server.ServerOptions) {
+		options.TransSrvOps.OnMessage = onMessage
+	})
+}
+
+func AddInboundMiddleware(mdw middleware.Handler) ServerOption {
+	return newFuncServerOption(func(options *server.ServerOptions) {
+		options.MsgHandlerOps.InboundHandlers = append(options.MsgHandlerOps.InboundHandlers, mdw)
+	})
+}
+
+func AddOutboundMiddleware(mdw middleware.Handler) ServerOption {
+	return newFuncServerOption(func(options *server.ServerOptions) {
+		options.MsgHandlerOps.OutboundHandlers = append(options.MsgHandlerOps.OutboundHandlers, mdw)
+	})
+}
+
 func MaxConnectionSize(size uint32) ServerOption {
 	return newFuncServerOption(func(options *server.ServerOptions) {
-		options.MaxConnectionSize = size
+		options.TransSrvOps.MaxConnectionSize = size
 	})
 }
 
 func MaxSendMessageSize(size uint32) ServerOption {
 	return newFuncServerOption(func(options *server.ServerOptions) {
-		options.MaxSendMessageSize = size
+		options.TransSrvOps.MaxSendMessageSize = size
 	})
 }
 
 func MaxReceiveMessageSize(size uint32) ServerOption {
 	return newFuncServerOption(func(options *server.ServerOptions) {
-		options.MaxReceiveMessageSize = size
+		options.TransSrvOps.MaxReceiveMessageSize = size
 	})
 }
 
-func WithCodec(codec codec.Codec) ServerOption {
+func WithCodec(codec transport.Codec) ServerOption {
 	return newFuncServerOption(func(options *server.ServerOptions) {
-		options.Codec = codec
+		options.TransSrvOps.Codec = codec
 	})
 }
