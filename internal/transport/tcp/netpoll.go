@@ -1,50 +1,62 @@
 //go:build darwin || netbsd || freebsd || openbsd || dragonfly || linux
 // +build darwin netbsd freebsd openbsd dragonfly linux
 
-package conn
+package tcp
 
 import (
-	"github.com/cloudwego/netpoll"
-	"less/pkg/transport"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"less/internal/conn"
+	"less/pkg/io"
+
+	"github.com/cloudwego/netpoll"
+	"github.com/cloudwego/netpoll/mux"
 )
 
-func WrapConnection(con netpoll.Connection) transport.Connection {
+func WrapConnection(con netpoll.Connection) conn.Connection {
 	c := connPool.Get().(*connection)
-	c.conn = con
+	c.delegate = con
 	return c
 }
 
-func (c *connection) Reader() transport.Reader {
-	c.r.delegate = c.conn.Reader()
+func (c *connection) Read(buf []byte) (n int, err error) {
+	return c.delegate.Read(buf)
+}
+
+func (c *connection) Reader() io.Reader {
+	c.r.delegate = c.delegate.Reader()
 	return c.r
 }
 
-func (c *connection) Writer() transport.Writer {
-	c.w.delegate = c.conn.Writer()
+func (c *connection) Writer() io.Writer {
+	c.w.delegate = c.delegate.Writer()
 	return c.w
 }
 
+func (c *connection) IsActive() bool {
+	return c.delegate.IsActive()
+}
+
 func (c *connection) Close() error {
-	return c.conn.Close()
+	if atomic.CompareAndSwapUint32(&c.closed, conn.Active, conn.Inactive) {
+		return c.delegate.Close()
+	}
+	return nil
 }
 
 func (c *connection) LocalAddr() net.Addr {
-	return c.conn.LocalAddr()
+	return c.delegate.LocalAddr()
 }
 
 func (c *connection) RemoteAddr() net.Addr {
-	return c.conn.RemoteAddr()
+	return c.delegate.RemoteAddr()
 }
 
 func (c *connection) SetReadTimeout(t time.Duration) error {
-	return c.conn.SetReadTimeout(t)
-}
-
-func (c *connection) Recycle() {
-
+	return c.delegate.SetReadTimeout(t)
 }
 
 func (w *writer) Write(buf []byte) (n int, err error) {
@@ -97,23 +109,25 @@ var connPool = sync.Pool{
 	},
 }
 
-// connection implements transport.Connection
+// connection implements conn.Connection
 type connection struct {
-	conn netpoll.Connection
-	r    *reader
-	w    *writer
+	delegate netpoll.Connection
+	sq       *mux.ShardQueue
+	r        *reader
+	w        *writer
+	closed   uint32
 }
 
-var _ transport.Reader = (*reader)(nil)
+var _ io.Reader = (*reader)(nil)
 
-// reader implements transport.Reader
+// reader implements io.Reader
 type reader struct {
 	delegate netpoll.Reader
 }
 
-var _ transport.Writer = (*writer)(nil)
+var _ io.Writer = (*writer)(nil)
 
-// writer implements transport.Writer
+// writer implements io.Writer
 type writer struct {
 	delegate netpoll.Writer
 }
