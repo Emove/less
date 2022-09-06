@@ -51,6 +51,9 @@ func (r *bufferReader) Next(n int) (buf []byte, err error) {
 
 // Peek returns the next n bytes without advancing bufferReader
 func (r *bufferReader) Peek(n int) (buf []byte, err error) {
+	if n <= 0 {
+		return
+	}
 	if err = r.ensureReadable(n); err != nil {
 		return
 	}
