@@ -1,6 +1,7 @@
 package reader
 
 import (
+	"github.com/emove/less/internal/errors"
 	"sync"
 	"time"
 
@@ -12,6 +13,7 @@ func NewBufferReader(decorator io.Reader) less_io.Reader {
 	r := bufferReaderPool.Get().(*bufferReader)
 	r.decorator = decorator
 	r.buff = make([]byte, 1024)
+	r.growable = true
 	return r
 }
 
@@ -19,6 +21,7 @@ func NewBufferReaderWithBuf(decorator io.Reader, buf []byte) less_io.Reader {
 	r := bufferReaderPool.Get().(*bufferReader)
 	r.decorator = decorator
 	r.buff = buf
+	r.growable = false
 	return r
 }
 
@@ -31,6 +34,7 @@ type bufferReader struct {
 	decorator  io.Reader
 	timeout    time.Duration
 	buff       []byte
+	growable   bool
 	readIndex  int
 	writeIndex int
 }
@@ -103,8 +107,12 @@ func (r *bufferReader) ensureReadable(n int) error {
 	}
 
 	want := n - readable
+	remain := len(r.buff) - r.writeIndex
+	if !r.growable && remain < want {
+		return errors.New("given buffer not enough, remain: %d, need: %d", remain, want)
+	}
 
-	if len(r.buff)-r.writeIndex < want {
+	if remain < want {
 		r.growth(want + r.writeIndex - len(r.buff))
 	}
 
