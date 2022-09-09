@@ -116,11 +116,11 @@ func TestNewBufferReaderWithBuf(t *testing.T) {
 		br := reader.(*bufferReader)
 
 		if len(br.buff) != size {
-			t.Errorf("expected reader buf length: 8, but: %d", len(br.buff))
+			t.Fatalf("expected reader buf length: 8, but: %d", len(br.buff))
 		}
 
 		if _, err := br.Next(9); err != nil {
-			t.Fatalf(err.Error())
+			t.Log(err.Error())
 		}
 
 	})
