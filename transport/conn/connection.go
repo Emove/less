@@ -1,10 +1,8 @@
 package conn
 
 import (
+	"github.com/emove/less/io"
 	"net"
-	"time"
-
-	"less/pkg/io"
 )
 
 const (
@@ -12,7 +10,7 @@ const (
 	Inactive
 )
 
-// Connection wrapper for net.Conn and netpoll.Connection.
+// Connection defines an interface of underlying connection.
 type Connection interface {
 	Read(buf []byte) (n int, err error)
 
@@ -35,5 +33,5 @@ type Connection interface {
 
 	// SetReadTimeout sets the timeout for future Read calls wait.
 	// A zero value for timeout means Reader will not be timeout.
-	SetReadTimeout(t time.Duration) error
+	//SetReadTimeout(t time.Duration) error
 }
