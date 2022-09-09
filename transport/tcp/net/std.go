@@ -1,7 +1,4 @@
-//go:build windows
-// +build windows
-
-package tcp
+package net
 
 import (
 	"context"
@@ -9,13 +6,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"less/internal/conn"
-	"less/internal/io/reader"
-	"less/internal/io/writer"
-	"less/pkg/io"
+	"github.com/emove/less/internal/io/reader"
+	"github.com/emove/less/internal/io/writer"
+	"github.com/emove/less/io"
+	"github.com/emove/less/transport/conn"
 )
 
-// WrapConnection wrap net.Conn to transport.Connection
+// WrapConnection wraps net.Conn to conn.Connection
 func WrapConnection(conn net.Conn) conn.Connection {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	return &connection{
@@ -27,7 +24,7 @@ func WrapConnection(conn net.Conn) conn.Connection {
 
 var _ conn.Connection = (*connection)(nil)
 
-// connection implements transport.Connection
+// connection implements conn.Connection
 type connection struct {
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -38,7 +35,7 @@ type connection struct {
 }
 
 func (c *connection) Read(buf []byte) (n int, err error) {
-	r := reader.NewBufferReaderWithBuf(c, buf)
+	r := reader.NewBufferReaderWithBuf(c.delegate, buf)
 	if c.readTimeout > 0 {
 		r = reader.NewTimeoutReader(r, c.readTimeout)
 	}
@@ -62,7 +59,7 @@ func (c *connection) Reader() io.Reader {
 
 // Writer returns a writer
 func (c *connection) Writer() io.Writer {
-	return writer.NewBufferWriter(c)
+	return writer.NewBufferWriter(c.delegate)
 }
 
 func (c *connection) IsActive() bool {
