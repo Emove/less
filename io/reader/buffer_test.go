@@ -27,7 +27,6 @@ func prepare() (pair *connPair, err error) {
 
 	clientChann := make(chan *clientCon)
 	go func() {
-		time.Sleep(1 * time.Second)
 		client, err1 := net.Dial(network, addr)
 		clientChann <- &clientCon{client: client, err: err1}
 	}()
