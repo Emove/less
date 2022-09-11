@@ -2,14 +2,14 @@ package reader
 
 import (
 	"github.com/emove/less/internal/errors"
+	io2 "github.com/emove/less/pkg/io"
 	"sync"
 	"time"
 
-	less_io "github.com/emove/less/io"
 	"io"
 )
 
-func NewBufferReader(decorator io.Reader) less_io.Reader {
+func NewBufferReader(decorator io.Reader) io2.Reader {
 	r := bufferReaderPool.Get().(*bufferReader)
 	r.decorator = decorator
 	r.buff = make([]byte, 1024)
@@ -17,7 +17,7 @@ func NewBufferReader(decorator io.Reader) less_io.Reader {
 	return r
 }
 
-func NewBufferReaderWithBuf(decorator io.Reader, buf []byte) less_io.Reader {
+func NewBufferReaderWithBuf(decorator io.Reader, buf []byte) io2.Reader {
 	r := bufferReaderPool.Get().(*bufferReader)
 	r.decorator = decorator
 	r.buff = buf

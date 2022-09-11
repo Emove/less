@@ -2,15 +2,15 @@ package reader
 
 import (
 	"github.com/emove/less/internal/errors"
-	"github.com/emove/less/io"
+	io2 "github.com/emove/less/pkg/io"
 )
 
 type limitReader struct {
 	remain    uint32
-	decorator io.Reader
+	decorator io2.Reader
 }
 
-func NewLimitReader(decorator io.Reader, limit uint32) io.Reader {
+func NewLimitReader(decorator io2.Reader, limit uint32) io2.Reader {
 	return &limitReader{
 		decorator: decorator,
 		remain:    limit,

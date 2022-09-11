@@ -1,7 +1,7 @@
 package writer
 
 import (
-	less_io "github.com/emove/less/io"
+	less_io "github.com/emove/less/pkg/io"
 	"io"
 )
 
