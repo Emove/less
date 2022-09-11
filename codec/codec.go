@@ -10,6 +10,6 @@ type PacketCodec interface {
 
 type PayloadCodec interface {
 	Name() string
-	Marshal(msg interface{}, writer io.Writer) (err error)
-	UnMarshal(reader io.Reader) (msg interface{}, err error)
+	Marshal(message interface{}, writer io.Writer) (err error)
+	UnMarshal(reader io.Reader) (message interface{}, err error)
 }
