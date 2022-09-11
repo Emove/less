@@ -1,10 +1,8 @@
-package channel
+package less
 
 import (
 	"context"
 	"net"
-
-	"github.com/emove/less/middleware"
 )
 
 type (
@@ -32,18 +30,7 @@ type Channel interface {
 
 	AddOnChannelClosed(onChannelClosed ...OnChannelClosed)
 
-	AddInboundMiddleware(mw ...middleware.Middleware)
+	AddInboundMiddleware(mw ...Middleware)
 
-	AddOutboundMiddleware(mw ...middleware.Middleware)
-}
-
-type ctxChannelKey struct{}
-
-func NewChannelContext(ctx context.Context, ch Channel) context.Context {
-	return context.WithValue(ctx, ctxChannelKey{}, ch)
-}
-
-func FromChannelContext(ctx context.Context) (ch Channel, ok bool) {
-	ch, ok = ctx.Value(ctxChannelKey{}).(Channel)
-	return
+	AddOutboundMiddleware(mw ...Middleware)
 }

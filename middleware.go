@@ -1,10 +1,10 @@
-package middleware
+package less
 
 import (
 	"context"
 )
 
-type Handler func(ctx context.Context, message interface{}) error
+type Handler func(ctx context.Context, ch Channel, message interface{}) error
 
 type Middleware func(handler Handler) Handler
 

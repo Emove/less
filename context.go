@@ -1,8 +1,7 @@
-package context
+package less
 
 import (
 	"context"
-	"github.com/emove/less/channel"
 	"sync"
 )
 
@@ -11,7 +10,7 @@ type Context interface {
 
 	SetContext(ctx context.Context)
 
-	Channel() channel.Channel
+	Channel() Channel
 
 	Set(key, value interface{})
 
@@ -20,8 +19,8 @@ type Context interface {
 
 type ctx struct {
 	ctx   context.Context
-	ch    channel.Channel
-	props sync.Map
+	ch    Channel
+	props map[interface{}]interface{}
 }
 
 var pool = sync.Pool{
@@ -30,26 +29,36 @@ var pool = sync.Pool{
 	},
 }
 
-func New() *ctx {
-	return pool.Get().(*ctx)
+func New(ch Channel) *ctx {
+	c := pool.Get().(*ctx)
+	c.ch = ch
+	// channel context by default
+	c.ctx = ch.Context()
+	return c
 }
 
 func (c *ctx) Context() context.Context {
-	return c.ch.Context()
+	return c.ctx
 }
 
 func (c *ctx) SetContext(cc context.Context) {
 	c.ctx = cc
 }
 
-func (c *ctx) Channel() channel.Channel {
+func (c *ctx) Channel() Channel {
 	return c.ch
 }
 
 func (c *ctx) Set(k, v interface{}) {
-	c.props.Store(k, v)
+	c.props[k] = v
 }
 
-func (c *ctx) Get(k interface{}) (interface{}, bool) {
-	return c.props.Load(k)
+func (c *ctx) Get(k interface{}) (v interface{}, ok bool) {
+	v, ok = c.props[k]
+	return
+}
+
+func (c *ctx) Release() {
+	c.props = nil
+	c.ctx = nil
 }
