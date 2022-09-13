@@ -1,246 +1,32 @@
 package log
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 )
 
-func TestDebug(t *testing.T) {
-	type args struct {
-		v []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
-}
-
-func TestDebugf(t *testing.T) {
-	type args struct {
-		format string
-		v      []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
-}
-
-func TestDebugw(t *testing.T) {
-	type args struct {
-		kvs []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
-}
-
-func TestError(t *testing.T) {
-	type args struct {
-		v []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
-}
-
-func TestErrorf(t *testing.T) {
-	type args struct {
-		format string
-		v      []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
-}
-
-func TestErrorw(t *testing.T) {
-	type args struct {
-		kvs []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
-}
-
-func TestFatal(t *testing.T) {
-	type args struct {
-		v []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
-}
-
-func TestFatalf(t *testing.T) {
-	type args struct {
-		format string
-		v      []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
-}
-
-func TestFatalw(t *testing.T) {
-	type args struct {
-		kvs []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
-}
-
-func TestInfo(t *testing.T) {
-	type args struct {
-		v []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
-}
-
-func TestInfof(t *testing.T) {
-	type args struct {
-		format string
-		v      []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
-}
-
-func TestInfow(t *testing.T) {
-	type args struct {
-		kvs []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
-}
-
-func TestLog(t *testing.T) {
-	type args struct {
-		level Level
-		kvs   []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
-}
-
 func TestNewContextLogger(t *testing.T) {
-	logger := Logger(&l{t: t})
-	logger, err := With(logger, "ts", DefaultTimestamp, "caller", DefaultCaller)
-	if err != nil {
-		t.Fatalf("expect: %v, got: %v", nil, err)
-	}
-	type count struct {
-		cnt int
-	}
+	logger := Logger(&mockLogger{t: t})
+	logger, _ = With(logger, "ts", DefaultTimestamp, "caller", DefaultCaller)
 	type ctxCntKey struct{}
-	ctx := context.WithValue(context.Background(), ctxCntKey{}, &count{cnt: 0})
+	cnt := 0
+	ctx := context.WithValue(context.Background(), ctxCntKey{}, &cnt)
 	logger, _ = WithContext(ctx, logger)
 	logger, _ = With(logger, "count", Valuer(func(ctx context.Context) interface{} {
-		cnt := ctx.Value(ctxCntKey{}).(*count)
-		cnt.cnt++
-		return cnt.cnt
+		cnt := ctx.Value(ctxCntKey{}).(*int)
+		*cnt++
+		return *cnt
 	}))
 	logger.Log(LevelDebug, "msg", "test1")
 	logger.Log(LevelInfo, "msg", "test2")
 	logger.Log(LevelError, "msg", "test3")
 
 	SetLogger(logger)
-	nc := context.WithValue(context.Background(), ctxCntKey{}, &count{cnt: 0})
+	cnt1 := 0
+	nc := context.WithValue(context.Background(), ctxCntKey{}, &cnt1)
 	l := NewContextLogger(nc)
 	l.Log(LevelInfo, "msg", "test4")
 	l.Debug("test5")
@@ -257,55 +43,107 @@ func TestNewContextLogger(t *testing.T) {
 	logger.Log(LevelInfo, "msg", "test14")
 }
 
+func TestFilterLevel(t *testing.T) {
+	FilterLevel(LevelDebug, LevelWarn, LevelFatal)
+	logger := Logger(&mockLogger{t: t})
+	logger, _ = With(logger, "ts", DefaultTimestamp, "caller", DefaultCaller)
+	logger.Log(LevelDebug, "msg", "debug")
+	logger.Log(LevelInfo, "msg", "info")
+	logger.Log(LevelWarn, "msg", "warn")
+	logger.Log(LevelError, "msg", "error")
+	logger.Log(LevelFatal, "msg", "fatal")
+}
+
 func TestSetLogger(t *testing.T) {
-
+	logger, _ := With(global, "ts", DefaultTimestamp)
+	SetLogger(logger)
+	global.Log(LevelInfo, "msg", "setLogger")
 }
 
-func TestWarn(t *testing.T) {
-	type args struct {
-		v []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
+func TestGetLogger(t *testing.T) {
+	logger, _ := With(global, "ts", DefaultTimestamp)
+	SetLogger(logger)
+	GetLogger().Log(LevelInfo, "msg", "getLogger")
 }
 
-func TestWarnf(t *testing.T) {
-	type args struct {
-		format string
-		v      []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
-	}
-}
+func TestGlobalLog(t *testing.T) {
+	buff := &bytes.Buffer{}
+	SetLogger(NewStdLogger(buff))
 
-func TestWarnw(t *testing.T) {
-	type args struct {
-		kvs []interface{}
-	}
-	tests := []struct {
-		name string
-		args args
+	cases := []struct {
+		level   Level
+		content []interface{}
 	}{
-		// TODO: Add test cases.
+		{
+			level:   LevelDebug,
+			content: []interface{}{"test debug"},
+		},
+		{
+			level:   LevelInfo,
+			content: []interface{}{"test info"},
+		},
+		{
+			level:   LevelInfo,
+			content: []interface{}{"test %s", "info"},
+		},
+		{
+			level:   LevelWarn,
+			content: []interface{}{"test warn"},
+		},
+		{
+			level:   LevelError,
+			content: []interface{}{"test error"},
+		},
+		{
+			level:   LevelError,
+			content: []interface{}{"test %s", "error"},
+		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-		})
+
+	expected := []string{}
+	for _, c := range cases {
+		msg := fmt.Sprintf(c.content[0].(string), c.content[1:]...)
+		switch c.level {
+		case LevelDebug:
+			Debug(msg)
+			expected = append(expected, fmt.Sprintf("%s msg=%s", LevelDebug.String(), msg))
+			Debugf(c.content[0].(string), c.content[1:]...)
+			expected = append(expected, fmt.Sprintf("%s msg=%s", LevelDebug.String(), msg))
+			Debugw("log", msg)
+			expected = append(expected, fmt.Sprintf("%s log=%s", LevelDebug.String(), msg))
+		case LevelInfo:
+			Info(msg)
+			expected = append(expected, fmt.Sprintf("%s msg=%s", LevelInfo.String(), msg))
+			Infof(c.content[0].(string), c.content[1:]...)
+			expected = append(expected, fmt.Sprintf("%s msg=%s", LevelInfo.String(), msg))
+			Infow("log", msg)
+			expected = append(expected, fmt.Sprintf("%s log=%s", LevelInfo.String(), msg))
+		case LevelWarn:
+			Warn(msg)
+			expected = append(expected, fmt.Sprintf("%s msg=%s", LevelWarn.String(), msg))
+			Warnf(c.content[0].(string), c.content[1:]...)
+			expected = append(expected, fmt.Sprintf("%s msg=%s", LevelWarn.String(), msg))
+			Warnw("log", msg)
+			expected = append(expected, fmt.Sprintf("%s log=%s", LevelWarn.String(), msg))
+		case LevelError:
+			Error(msg)
+			expected = append(expected, fmt.Sprintf("%s msg=%s", LevelError.String(), msg))
+			Errorf(c.content[0].(string), c.content[1:]...)
+			expected = append(expected, fmt.Sprintf("%s msg=%s", LevelError.String(), msg))
+			Errorw("log", msg)
+			expected = append(expected, fmt.Sprintf("%s log=%s", LevelError.String(), msg))
+		}
 	}
+
+	Log(LevelInfo, defaultMsgKey, "test log")
+	expected = append(expected, fmt.Sprintf("%s msg=%s", "INFO", "test log"))
+	expected = append(expected, "")
+
+	result := buff.String()
+	t.Log(result)
+
+	if result != strings.Join(expected, "\n") {
+		t.Errorf("want: \n%s, got: \n%s", strings.Join(expected, "\n"), result)
+	}
+
 }

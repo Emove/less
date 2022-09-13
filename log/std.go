@@ -8,6 +8,7 @@ import (
 	"sync"
 )
 
+// COPY FROM https://github.com/go-kratos/kratos/blob/main/log/std.go
 var _ Logger = (*stdLogger)(nil)
 
 type stdLogger struct {

@@ -48,7 +48,7 @@ func Timestamp(layout string) Valuer {
 	}
 }
 
-func bindValues(ctx context.Context, keyvals []interface{}) {
+func calculateValues(ctx context.Context, keyvals []interface{}) {
 	for i := 1; i < len(keyvals); i += 2 {
 		if v, ok := keyvals[i].(Valuer); ok {
 			keyvals[i] = v(ctx)

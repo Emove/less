@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	ErrKvsNotInPaired = errors.New("kvs must in paired")
+	ErrKvsNotInPaired = errors.New("kvs must appear in pairs")
 	ErrContextIsNil   = errors.New("context must be non-nil")
 )
 
@@ -59,11 +59,15 @@ type logger struct {
 
 // Log implements Logger
 func (l logger) Log(level Level, kvs ...interface{}) {
+	// filter not logging level
+	if _, ok := filterLevels[level]; ok {
+		return
+	}
 	keyvals := make([]interface{}, 0, len(l.prefixes)+len(kvs))
 
 	keyvals = append(keyvals, l.prefixes...)
 	if l.containsValuer {
-		bindValues(l.ctx, keyvals)
+		calculateValues(l.ctx, keyvals)
 	}
 	keyvals = append(keyvals, kvs...)
 	l.l.Log(level, keyvals...)
@@ -83,15 +87,20 @@ func With(l Logger, kvs ...interface{}) (Logger, error) {
 			containsValuer: containsValuer(kvs),
 		}, nil
 	}
+
+	prefix := make([]interface{}, 0, len(d.prefixes)+len(kvs))
+	prefix = append(prefix, d.prefixes...)
+	prefix = append(prefix, kvs...)
+
 	return &logger{
 		l:              d.l,
 		ctx:            d.ctx,
-		prefixes:       append(d.prefixes, kvs...),
+		prefixes:       prefix,
 		containsValuer: d.containsValuer || containsValuer(kvs),
 	}, nil
 }
 
-// WithContext returns a shallow copy of l with its context changed
+// WithContext returns a shallow copy of mockLogger with its context changed
 // to ctx. The provided ctx must be non-nil.
 func WithContext(ctx context.Context, l Logger) (Logger, error) {
 	if nil == ctx {

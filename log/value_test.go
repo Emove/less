@@ -6,11 +6,11 @@ import (
 )
 
 func TestValue(t *testing.T) {
-	logger := Logger(&l{t: t})
+	logger := Logger(&mockLogger{t: t})
 	logger, _ = With(logger, "ts", DefaultTimestamp, "caller", DefaultCaller)
 	logger.Log(LevelInfo, "msg", "helloworld")
 
-	logger = Logger(&l{t: t})
+	logger = Logger(&mockLogger{t: t})
 	logger, _ = With(logger)
 	logger.Log(LevelDebug, "msg", "helloworld")
 

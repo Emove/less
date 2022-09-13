@@ -6,11 +6,42 @@ import (
 	"os"
 )
 
-var global = defaultLogger
+var (
+	global       Logger
+	filterLevels = make(map[Level]struct{})
+)
+
+func init() {
+	global = defaultLogger
+}
 
 // SetLogger replace default std logger
 func SetLogger(l Logger) {
 	global = l
+}
+
+// GetLogger returns global logger
+func GetLogger() Logger {
+	return global
+}
+
+// FilterLevel sets not logging level
+func FilterLevel(level ...Level) {
+	for _, l := range level {
+		switch l {
+		case LevelDebug:
+			filterLevels[l] = struct{}{}
+		case LevelInfo:
+			filterLevels[l] = struct{}{}
+		case LevelWarn:
+			filterLevels[l] = struct{}{}
+		case LevelError:
+			filterLevels[l] = struct{}{}
+		case LevelFatal:
+			filterLevels[l] = struct{}{}
+		default:
+		}
+	}
 }
 
 // NewContextLogger returns a FullLogger with context
@@ -21,7 +52,7 @@ func NewContextLogger(ctx context.Context) FullLogger {
 }
 
 func Log(level Level, kvs ...interface{}) {
-	global.Log(level, kvs)
+	global.Log(level, kvs...)
 }
 
 func Debug(v ...interface{}) {
