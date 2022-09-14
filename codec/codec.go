@@ -1,6 +1,8 @@
 package codec
 
-import "github.com/emove/less/io"
+import (
+	"github.com/emove/less/pkg/io"
+)
 
 type PacketCodec interface {
 	Name() string
