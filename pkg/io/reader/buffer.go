@@ -2,14 +2,14 @@ package reader
 
 import (
 	"github.com/emove/less/internal/errors"
-	io2 "github.com/emove/less/pkg/io"
+	less_io "github.com/emove/less/pkg/io"
 	"sync"
 	"time"
 
 	"io"
 )
 
-func NewBufferReader(decorator io.Reader) io2.Reader {
+func NewBufferReader(decorator io.Reader) less_io.Reader {
 	r := bufferReaderPool.Get().(*bufferReader)
 	r.decorator = decorator
 	r.buff = make([]byte, 1024)
@@ -17,7 +17,7 @@ func NewBufferReader(decorator io.Reader) io2.Reader {
 	return r
 }
 
-func NewBufferReaderWithBuf(decorator io.Reader, buf []byte) io2.Reader {
+func NewBufferReaderWithBuf(decorator io.Reader, buf []byte) less_io.Reader {
 	r := bufferReaderPool.Get().(*bufferReader)
 	r.decorator = decorator
 	r.buff = buf
@@ -29,6 +29,8 @@ var bufferReaderPool = sync.Pool{
 	New: func() interface{} { return &bufferReader{} },
 }
 
+var _ less_io.Reader = (*bufferReader)(nil)
+
 // bufferReader implements Reader
 type bufferReader struct {
 	decorator  io.Reader
@@ -37,6 +39,29 @@ type bufferReader struct {
 	growable   bool
 	readIndex  int
 	writeIndex int
+}
+
+// Read reads bytes start at readIndex
+func (r *bufferReader) Read(buff []byte) (n int, err error) {
+	if r.readIndex == r.writeIndex {
+		n, err = r.decorator.Read(buff)
+		if err != nil {
+			return n, err
+		}
+
+		// copy(r.buff[r.writeIndex:r.writeIndex+n], buff)
+		r.readIndex += n
+		r.writeIndex += n
+		return
+	}
+
+	if err = r.ensureReadable(len(buff), buff); err != nil {
+		return 0, err
+	}
+	n = len(buff)
+	r.readIndex += n
+
+	return
 }
 
 // Next returns the next n bytes
@@ -54,7 +79,7 @@ func (r *bufferReader) Peek(n int) (buf []byte, err error) {
 	if n <= 0 {
 		return
 	}
-	if err = r.ensureReadable(n); err != nil {
+	if err = r.ensureReadable(n, nil); err != nil {
 		return
 	}
 
@@ -90,7 +115,7 @@ func (r *bufferReader) Until(delim byte) (line []byte, err error) {
 }
 
 func (r *bufferReader) Length() int {
-	return len(r.buff)
+	return r.writeIndex
 }
 
 // Release releases the bufferReader buffer and reuse bufferReader
@@ -102,10 +127,13 @@ func (r *bufferReader) Release() {
 	bufferReaderPool.Put(r)
 }
 
-func (r *bufferReader) ensureReadable(n int) error {
+func (r *bufferReader) ensureReadable(n int, buff []byte) (err error) {
 	readable := r.writeIndex - r.readIndex
 	if readable >= n {
 		// enough
+		if buff != nil {
+			copy(buff, r.buff[r.readIndex:r.readIndex+n])
+		}
 		return nil
 	}
 
@@ -119,7 +147,14 @@ func (r *bufferReader) ensureReadable(n int) error {
 		r.growth(want + r.writeIndex - len(r.buff))
 	}
 
-	_, err := r.decorator.Read(r.buff[r.writeIndex : r.writeIndex+want])
+	if buff != nil {
+		if readable > 0 {
+			copy(buff[:readable], r.buff[r.readIndex:r.readIndex+readable])
+		}
+		_, err = r.decorator.Read(buff[readable:])
+	} else {
+		_, err = r.decorator.Read(r.buff[r.writeIndex : r.writeIndex+want])
+	}
 	if err != nil {
 		return err
 	}

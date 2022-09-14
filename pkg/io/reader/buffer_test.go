@@ -1,6 +1,7 @@
 package reader
 
 import (
+	"bytes"
 	"log"
 	"net"
 	"reflect"
@@ -280,4 +281,82 @@ func Test_bufferReader_Skip(t *testing.T) {
 		}
 
 	})
+}
+
+func Test_bufferReader_Length(t *testing.T) {
+	buff := &bytes.Buffer{}
+	buff.WriteString("hello world")
+
+	reader := NewBufferReader(buff)
+
+	_, err := reader.Next(6)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if reader.Length() != 6 {
+		t.Fatalf("want: 6, got: %d", reader.Length())
+	}
+
+	subReader := NewBufferReader(reader)
+	_, err = subReader.Next(5)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if subReader.Length() != 5 {
+		t.Fatalf("want: 5, got: %d", subReader.Length())
+	}
+	if reader.Length() != 11 {
+		t.Fatalf("want: 11, got: %d", reader.Length())
+	}
+
+}
+
+func Test_bufferReader_Read(t *testing.T) {
+	buff := &bytes.Buffer{}
+	buff.WriteString("hello world")
+
+	reader := NewBufferReader(buff)
+
+	h := make([]byte, 5, 5)
+	read, err := reader.Read(h)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if read != 5 {
+		t.Fatalf("want n: %d, got n: %d", 5, read)
+	}
+
+	if string(h) != "hello" {
+		t.Fatalf("want buff: %s, got buff: %s", "hello", string(h))
+	}
+
+	// readIndex < writerIndex, but enough
+	_, _ = reader.Peek(1)
+	b := make([]byte, 1, 1)
+	read, err = reader.Read(b)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if read != 1 {
+		t.Fatalf("want n: %d, got n: %d", 1, read)
+	}
+
+	if string(b) != " " {
+		t.Fatalf("want buff: %s, got buff: %s", " ", string(b))
+	}
+
+	// readIndex < writeIndex, but inside buff not enough
+	_, _ = reader.Peek(3)
+	s := make([]byte, 5, 5)
+	read, err = reader.Read(s)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if read != 5 {
+		t.Fatalf("want n: %d, got n: %d", 5, read)
+	}
+
+	if string(s) != "world" {
+		t.Fatalf("want buff: %s, got buff: %s", "world", string(s))
+	}
 }
