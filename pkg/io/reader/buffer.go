@@ -114,6 +114,7 @@ func (r *bufferReader) Until(delim byte) (line []byte, err error) {
 	return
 }
 
+// Length returns read bytes length
 func (r *bufferReader) Length() int {
 	return r.writeIndex
 }
