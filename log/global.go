@@ -29,15 +29,7 @@ func GetLogger() Logger {
 func FilterLevel(level ...Level) {
 	for _, l := range level {
 		switch l {
-		case LevelDebug:
-			filterLevels[l] = struct{}{}
-		case LevelInfo:
-			filterLevels[l] = struct{}{}
-		case LevelWarn:
-			filterLevels[l] = struct{}{}
-		case LevelError:
-			filterLevels[l] = struct{}{}
-		case LevelFatal:
+		case LevelDebug, LevelInfo, LevelWarn, LevelError, LevelFatal:
 			filterLevels[l] = struct{}{}
 		default:
 		}
