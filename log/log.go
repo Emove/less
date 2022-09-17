@@ -15,7 +15,7 @@ var (
 
 var (
 	defaultLogger, _ = With(NewStdLogger(log.Writer()))
-	defaultMsgKey    = "msg"
+	DefaultMsgKey    = "msg"
 )
 
 // Logger defines logger interface
@@ -129,11 +129,11 @@ func (l *fullLogger) Log(level Level, kvs ...interface{}) {
 }
 
 func (l *fullLogger) Debug(v ...interface{}) {
-	l.l.Log(LevelDebug, defaultMsgKey, fmt.Sprint(v...))
+	l.l.Log(LevelDebug, DefaultMsgKey, fmt.Sprint(v...))
 }
 
 func (l *fullLogger) Debugf(format string, v ...interface{}) {
-	l.l.Log(LevelDebug, defaultMsgKey, fmt.Sprintf(format, v...))
+	l.l.Log(LevelDebug, DefaultMsgKey, fmt.Sprintf(format, v...))
 }
 
 func (l *fullLogger) Debugw(kvs ...interface{}) {
@@ -141,11 +141,11 @@ func (l *fullLogger) Debugw(kvs ...interface{}) {
 }
 
 func (l *fullLogger) Info(v ...interface{}) {
-	l.l.Log(LevelInfo, defaultMsgKey, fmt.Sprint(v...))
+	l.l.Log(LevelInfo, DefaultMsgKey, fmt.Sprint(v...))
 }
 
 func (l *fullLogger) Infof(format string, v ...interface{}) {
-	l.l.Log(LevelInfo, defaultMsgKey, fmt.Sprintf(format, v...))
+	l.l.Log(LevelInfo, DefaultMsgKey, fmt.Sprintf(format, v...))
 }
 
 func (l *fullLogger) Infow(kvs ...interface{}) {
@@ -153,11 +153,11 @@ func (l *fullLogger) Infow(kvs ...interface{}) {
 }
 
 func (l *fullLogger) Warn(v ...interface{}) {
-	l.l.Log(LevelWarn, defaultMsgKey, fmt.Sprint(v...))
+	l.l.Log(LevelWarn, DefaultMsgKey, fmt.Sprint(v...))
 }
 
 func (l *fullLogger) Warnf(format string, v ...interface{}) {
-	l.l.Log(LevelWarn, defaultMsgKey, fmt.Sprintf(format, v...))
+	l.l.Log(LevelWarn, DefaultMsgKey, fmt.Sprintf(format, v...))
 }
 
 func (l *fullLogger) Warnw(kvs ...interface{}) {
@@ -165,11 +165,11 @@ func (l *fullLogger) Warnw(kvs ...interface{}) {
 }
 
 func (l *fullLogger) Error(v ...interface{}) {
-	l.l.Log(LevelError, defaultMsgKey, fmt.Sprint(v...))
+	l.l.Log(LevelError, DefaultMsgKey, fmt.Sprint(v...))
 }
 
 func (l *fullLogger) Errorf(format string, v ...interface{}) {
-	l.l.Log(LevelError, defaultMsgKey, fmt.Sprintf(format, v...))
+	l.l.Log(LevelError, DefaultMsgKey, fmt.Sprintf(format, v...))
 }
 
 func (l *fullLogger) Errorw(kvs ...interface{}) {
@@ -177,12 +177,12 @@ func (l *fullLogger) Errorw(kvs ...interface{}) {
 }
 
 func (l *fullLogger) Fatal(v ...interface{}) {
-	l.l.Log(LevelFatal, defaultMsgKey, fmt.Sprint(v...))
+	l.l.Log(LevelFatal, DefaultMsgKey, fmt.Sprint(v...))
 	os.Exit(1)
 }
 
 func (l *fullLogger) Fatalf(format string, v ...interface{}) {
-	l.l.Log(LevelFatal, defaultMsgKey, fmt.Sprintf(format, v...))
+	l.l.Log(LevelFatal, DefaultMsgKey, fmt.Sprintf(format, v...))
 	os.Exit(1)
 }
 

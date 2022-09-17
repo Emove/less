@@ -135,7 +135,7 @@ func TestGlobalLog(t *testing.T) {
 		}
 	}
 
-	Log(LevelInfo, defaultMsgKey, "test log")
+	Log(LevelInfo, DefaultMsgKey, "test log")
 	expected = append(expected, fmt.Sprintf("%s msg=%s", "INFO", "test log"))
 	expected = append(expected, "")
 

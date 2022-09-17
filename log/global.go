@@ -48,11 +48,11 @@ func Log(level Level, kvs ...interface{}) {
 }
 
 func Debug(v ...interface{}) {
-	global.Log(LevelDebug, defaultMsgKey, fmt.Sprint(v...))
+	global.Log(LevelDebug, DefaultMsgKey, fmt.Sprint(v...))
 }
 
 func Debugf(format string, v ...interface{}) {
-	global.Log(LevelDebug, defaultMsgKey, fmt.Sprintf(format, v...))
+	global.Log(LevelDebug, DefaultMsgKey, fmt.Sprintf(format, v...))
 }
 
 func Debugw(kvs ...interface{}) {
@@ -60,11 +60,11 @@ func Debugw(kvs ...interface{}) {
 }
 
 func Info(v ...interface{}) {
-	global.Log(LevelInfo, defaultMsgKey, fmt.Sprint(v...))
+	global.Log(LevelInfo, DefaultMsgKey, fmt.Sprint(v...))
 }
 
 func Infof(format string, v ...interface{}) {
-	global.Log(LevelInfo, defaultMsgKey, fmt.Sprintf(format, v...))
+	global.Log(LevelInfo, DefaultMsgKey, fmt.Sprintf(format, v...))
 }
 
 func Infow(kvs ...interface{}) {
@@ -72,11 +72,11 @@ func Infow(kvs ...interface{}) {
 }
 
 func Warn(v ...interface{}) {
-	global.Log(LevelWarn, defaultMsgKey, fmt.Sprint(v...))
+	global.Log(LevelWarn, DefaultMsgKey, fmt.Sprint(v...))
 }
 
 func Warnf(format string, v ...interface{}) {
-	global.Log(LevelWarn, defaultMsgKey, fmt.Sprintf(format, v...))
+	global.Log(LevelWarn, DefaultMsgKey, fmt.Sprintf(format, v...))
 }
 
 func Warnw(kvs ...interface{}) {
@@ -84,11 +84,11 @@ func Warnw(kvs ...interface{}) {
 }
 
 func Error(v ...interface{}) {
-	global.Log(LevelError, defaultMsgKey, fmt.Sprint(v...))
+	global.Log(LevelError, DefaultMsgKey, fmt.Sprint(v...))
 }
 
 func Errorf(format string, v ...interface{}) {
-	global.Log(LevelError, defaultMsgKey, fmt.Sprintf(format, v...))
+	global.Log(LevelError, DefaultMsgKey, fmt.Sprintf(format, v...))
 }
 
 func Errorw(kvs ...interface{}) {
@@ -96,12 +96,12 @@ func Errorw(kvs ...interface{}) {
 }
 
 func Fatal(v ...interface{}) {
-	global.Log(LevelFatal, defaultMsgKey, fmt.Sprint(v...))
+	global.Log(LevelFatal, DefaultMsgKey, fmt.Sprint(v...))
 	os.Exit(1)
 }
 
 func Fatalf(format string, v ...interface{}) {
-	global.Log(LevelFatal, defaultMsgKey, fmt.Sprintf(format, v...))
+	global.Log(LevelFatal, DefaultMsgKey, fmt.Sprintf(format, v...))
 	os.Exit(1)
 }
 
