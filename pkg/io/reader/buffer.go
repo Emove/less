@@ -12,7 +12,7 @@ import (
 func NewBufferReader(decorator io.Reader) less_io.Reader {
 	r := bufferReaderPool.Get().(*bufferReader)
 	r.decorator = decorator
-	r.buff = make([]byte, 1024)
+	r.buff = make([]byte, 256)
 	r.growable = true
 	return r
 }
@@ -152,9 +152,11 @@ func (r *bufferReader) ensureReadable(n int, buff []byte) (err error) {
 		if readable > 0 {
 			copy(buff[:readable], r.buff[r.readIndex:r.readIndex+readable])
 		}
-		_, err = r.decorator.Read(buff[readable:])
+		_, err = io.ReadFull(r.decorator, buff[readable:])
+		//_, err = r.decorator.Read(buff[readable:])
 	} else {
-		_, err = r.decorator.Read(r.buff[r.writeIndex : r.writeIndex+want])
+		//_, err = r.decorator.Read(r.buff[r.writeIndex : r.writeIndex+want])
+		_, err = io.ReadFull(r.decorator, r.buff[r.writeIndex:r.writeIndex+want])
 	}
 	if err != nil {
 		return err

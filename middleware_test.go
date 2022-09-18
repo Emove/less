@@ -12,7 +12,8 @@ func TestChain(t *testing.T) {
 		return nil
 	}
 
-	err := Chain(middleware1(t), middleware2(t), middleware3(t))(h)(context.Background(), nil, "middleware test")
+	mws := Chain(middleware1(t), middleware2(t))
+	err := Chain(mws, middleware3(t))(h)(context.Background(), nil, "middleware test")
 	if err != nil {
 		t.Errorf("expect %v, got %v", nil, err)
 	}

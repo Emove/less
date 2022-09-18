@@ -21,7 +21,7 @@ func (*TextPayloadCodec) Marshal(message interface{}, writer io.Writer) (err err
 	}
 
 	_, err = writer.Write([]byte(content))
-	return writer.Flush()
+	return
 }
 
 func (*TextPayloadCodec) UnMarshal(reader io.Reader) (message interface{}, err error) {

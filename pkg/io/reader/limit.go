@@ -72,6 +72,5 @@ func (lr *limitReader) Release() {
 		_ = lr.decorator.Skip(int(lr.remain))
 		lr.remain = 0
 	}
-	lr.decorator.Release()
 	lr.decorator = nil
 }

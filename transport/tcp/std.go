@@ -1,14 +1,14 @@
-package net
+package tcp
 
 import (
 	"context"
+	"github.com/emove/less/pkg/io"
+	"github.com/emove/less/pkg/io/reader"
+	"github.com/emove/less/pkg/io/writer"
 	"net"
 	"sync/atomic"
 	"time"
 
-	"github.com/emove/less/internal/io/reader"
-	"github.com/emove/less/internal/io/writer"
-	"github.com/emove/less/io"
 	"github.com/emove/less/transport/conn"
 )
 
@@ -35,31 +35,21 @@ type connection struct {
 }
 
 func (c *connection) Read(buf []byte) (n int, err error) {
-	r := reader.NewBufferReaderWithBuf(c.delegate, buf)
-	if c.readTimeout > 0 {
-		r = reader.NewTimeoutReader(r, c.readTimeout)
-	}
-	size := len(buf)
-	r = reader.NewLimitReader(r, uint32(size))
-	_, err = r.Next(size)
-	if err != nil {
-		return -1, err
-	}
-	return size, nil
+	return c.delegate.Read(buf)
 }
 
 // Reader returns a reader
 func (c *connection) Reader() io.Reader {
 	r := reader.NewBufferReader(c)
-	if c.readTimeout > 0 {
-		r = reader.NewTimeoutReader(r, c.readTimeout)
-	}
+	//if c.readTimeout > 0 {
+	//	r = reader.NewTimeoutReader(r, c.readTimeout)
+	//}
 	return r
 }
 
 // Writer returns a writer
 func (c *connection) Writer() io.Writer {
-	return writer.NewBufferWriter(c.delegate)
+	return writer.NewBufferWriterWithBuf(c.delegate)
 }
 
 func (c *connection) IsActive() bool {
@@ -82,12 +72,4 @@ func (c *connection) LocalAddr() net.Addr {
 // RemoteAddr returns the remote address
 func (c *connection) RemoteAddr() net.Addr {
 	return c.delegate.RemoteAddr()
-}
-
-// SetReadTimeout sets the timeout for future Read calls wait
-func (c *connection) SetReadTimeout(t time.Duration) error {
-	if t >= 0 {
-		c.readTimeout = t
-	}
-	return nil
 }

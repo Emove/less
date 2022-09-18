@@ -1,16 +1,30 @@
 package server
 
 import (
-	"less/pkg/middleware"
-	"less/pkg/transport"
+	"github.com/emove/less"
+	"github.com/emove/less/codec"
+	"github.com/emove/less/internal/transport"
+	"github.com/emove/less/pkg/router"
+	trans "github.com/emove/less/transport"
+	"github.com/emove/less/transport/tcp"
 )
 
-type ServerOptions struct {
-	TransSrvOps   *transport.TransServerOption
-	MsgHandlerOps *middleware.HandlerOptions
+var DefaultServerOptions = &Options{
+	Addr:      "127.0.0.1",
+	Port:      "8888",
+	Transport: tcp.New(),
 }
 
-var DefaultServerOptions = ServerOptions{
-	TransSrvOps:   transport.DefaultTransSrvOptions,
-	MsgHandlerOps: &middleware.HandlerOptions{},
+type Options struct {
+	Addr               string
+	Port               string
+	Transport          trans.Transport
+	PacketCodec        codec.PacketCodec
+	PayloadCodec       codec.PayloadCodec
+	Router             router.Router
+	OnChannels         []less.OnChannel
+	OnChannelClosed    []less.OnChannelClosed
+	InboundMiddleware  []less.Middleware
+	OutboundMiddleware []less.Middleware
+	TransOptions       []transport.Option
 }

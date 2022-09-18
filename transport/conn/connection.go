@@ -1,7 +1,7 @@
 package conn
 
 import (
-	"github.com/emove/less/io"
+	"github.com/emove/less/pkg/io"
 	"net"
 )
 
