@@ -56,7 +56,7 @@ func TestVariableLengthCodec_Encode(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			args:    args{message: "hello world", writer: writer.NewBufferWriter(buff), payloadCodec: &payload.TextPayloadCodec{}},
+			args:    args{message: "hello world", writer: writer.NewBufferWriterWithBuf(buff), payloadCodec: &payload.TextPayloadCodec{}},
 			want:    "hello world",
 			wantErr: false,
 		},

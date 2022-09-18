@@ -2,51 +2,54 @@ package channel
 
 import (
 	"context"
+	"errors"
 	"net"
+	"sync"
+	"sync/atomic"
 
-	"github.com/emove/less/channel"
-	"github.com/emove/less/internal/transport"
-	"github.com/emove/less/io"
-	"github.com/emove/less/middleware"
+	"github.com/emove/less"
+	"github.com/emove/less/pkg/io"
 	"github.com/emove/less/transport/conn"
 )
 
-type ChannelFactory func(con conn.Connection) *Channel
+const (
+	closed = iota
+	readable
+	writeable
+	readWriteMode
+)
+
+var (
+	ErrChannelClosed       = errors.New("channel was closed")
+	ErrChannelReaderClosed = errors.New("channel reader was closed")
+	ErrChannelWriterClosed = errors.New("channel writer was closed")
+)
 
 type Channel struct {
-	ctx    context.Context
-	cancel context.CancelFunc
+	ctx       context.Context
+	conn      conn.Connection
+	state     int32
+	stateLock sync.Locker
+	pl        *pipeline
 
-	conn conn.Connection
-
-	onChannelClosed []channel.OnChannelClosed
-
-	inboundMiddleware  middleware.Middleware
-	outboundMiddleware middleware.Middleware
-
-	h transport.ChannelHandler
+	inboundTasks  sync.WaitGroup
+	outboundTasks sync.WaitGroup
 }
 
-func NewFactory(ctx context.Context, handler transport.ChannelHandler) ChannelFactory {
-	return func(con conn.Connection) *Channel {
-		return NewChannel(ctx, con, handler)
+func NewChannel(con conn.Connection, factory PipelineFactory) *Channel {
+	ch := &Channel{
+		ctx:           context.Background(),
+		conn:          con,
+		state:         closed,
+		stateLock:     &sync.Mutex{},
+		inboundTasks:  sync.WaitGroup{},
+		outboundTasks: sync.WaitGroup{},
 	}
+	ch.pl = factory(ch)
+	return ch
 }
 
-func NewChannel(ctx context.Context, con conn.Connection, handler transport.ChannelHandler) *Channel {
-	c, cancel := context.WithCancel(ctx)
-	return &Channel{
-		ctx:             c,
-		cancel:          cancel,
-		conn:            con,
-		h:               handler,
-		onChannelClosed: make([]channel.OnChannelClosed, 0),
-	}
-}
-
-func (ch *Channel) SetContext(ctx context.Context) {
-	ch.ctx = ctx
-}
+// ====================================== implements less.Channel ============================================ //
 
 func (ch *Channel) Context() context.Context {
 	return ch.ctx
@@ -60,58 +63,112 @@ func (ch *Channel) LocalAddr() net.Addr {
 	return ch.conn.LocalAddr()
 }
 
-func (ch *Channel) Reader() io.Reader {
-	return ch.conn.Reader()
-}
-
-func (ch *Channel) Writer() io.Writer {
-	return ch.conn.Writer()
-}
-
 func (ch *Channel) Write(msg interface{}) error {
-	// TODO
-	return ch.h.OnWrite(ch, ch.conn.Writer(), msg)
+	if ch.calState(writeable) {
+		ch.outboundTasks.Add(1)
+		defer ch.outboundTasks.Done()
+		return ch.pl.FireOutbound(msg)
+	}
+	return ErrChannelWriterClosed
 }
 
 func (ch *Channel) IsActive() bool {
 	return ch.conn.IsActive()
 }
 
-func (ch *Channel) Close(err error) {
+func (ch *Channel) CloseReader() {
+	ch.close(readable)
+}
 
-	if !ch.IsActive() {
-		return
+func (ch *Channel) CloseWriter() {
+	ch.close(writeable)
+}
+
+func (ch *Channel) Close(ctx context.Context, err error) error {
+
+	old := atomic.LoadInt32(&ch.state)
+	if closed == old || !atomic.CompareAndSwapInt32(&ch.state, old, closed) {
+		return ErrChannelClosed
 	}
 
-	ch.cancel()
+	defer func() {
+		// reuse pipeline
+		ch.pl.Release()
+		// close connection
+		_ = ch.conn.Close()
+	}()
 
-	// handle channel closed event
-	ch.h.OnChannelClosed(ch.ctx, ch, err, ch.onChannelClosed)
+	ch.inboundTasks.Wait()
+	ch.pl.FireOnChannelClosed(err)
 
-	// close connection
-	_ = ch.conn.Close()
+	done := make(chan struct{})
+	go func() {
+		// waiting for all task done
+		ch.outboundTasks.Wait()
+		close(done)
+	}()
+
+	for {
+		select {
+		case <-done:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
 }
 
-func (ch *Channel) AddOnChannelClosed(onChannelClosed ...channel.OnChannelClosed) {
-	ch.onChannelClosed = append(ch.onChannelClosed, onChannelClosed...)
+func (ch *Channel) AddOnChannelClosed(onChannelClosed ...less.OnChannelClosed) {
+	ch.pl.AddOnChannelClosed(onChannelClosed...)
 }
 
-func (ch *Channel) AddInboundMiddleware(mw ...middleware.Middleware) {
-	if len(mw) > 0 {
-		ch.inboundMiddleware = middleware.Chain(ch.inboundMiddleware, middleware.Chain(mw...))
+func (ch *Channel) AddInboundMiddleware(mw ...less.Middleware) {
+	ch.pl.AddInbound(mw...)
+}
+
+func (ch *Channel) AddOutboundMiddleware(mw ...less.Middleware) {
+	ch.pl.AddOutbound(mw...)
+}
+
+// ====================================== internal functions ============================================ //
+
+func (ch *Channel) Reader() (io.Reader, error) {
+	if !ch.calState(readable) {
+		return nil, ErrChannelReaderClosed
+	}
+	return ch.conn.Reader(), nil
+}
+
+func (ch *Channel) Writer() io.Writer {
+	return ch.conn.Writer()
+}
+
+func (ch *Channel) SetContext(ctx context.Context) {
+	ch.ctx = ctx
+}
+
+func (ch *Channel) GetPipeline() *pipeline {
+	return ch.pl
+}
+
+func (ch *Channel) close(mod int32) {
+	for {
+		old := atomic.LoadInt32(&ch.state)
+		if old&mod == mod {
+			if atomic.CompareAndSwapInt32(&ch.state, old, old^mod) {
+				return
+			}
+		} else {
+			return
+		}
 	}
 }
 
-func (ch *Channel) AddOutboundMiddleware(mw ...middleware.Middleware) {
-	if len(mw) > 0 {
-		ch.outboundMiddleware = middleware.Chain(ch.outboundMiddleware, middleware.Chain(mw...))
-	}
+func (ch *Channel) active() {
+	atomic.StoreInt32(&ch.state, readWriteMode)
 }
 
-func (ch *Channel) GetInboundMiddleware() middleware.Middleware {
-	return ch.inboundMiddleware
-}
-
-func (ch *Channel) GetOutboundMiddleware() middleware.Middleware {
-	return ch.outboundMiddleware
+func (ch *Channel) calState(state int32) bool {
+	return atomic.LoadInt32(&ch.state)&state == state
 }

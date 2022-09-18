@@ -22,11 +22,11 @@ type Channel interface {
 
 	IsActive() bool
 
-	Close(err error)
+	Close(ctx context.Context, err error) error
 
-	// CloseReader()
+	CloseReader()
 
-	// CloseWriter()
+	CloseWriter()
 
 	AddOnChannelClosed(onChannelClosed ...OnChannelClosed)
 
