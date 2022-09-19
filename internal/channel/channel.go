@@ -3,13 +3,13 @@ package channel
 import (
 	"context"
 	"errors"
+	"github.com/emove/less/transport"
 	"net"
 	"sync"
 	"sync/atomic"
 
 	"github.com/emove/less"
 	"github.com/emove/less/pkg/io"
-	"github.com/emove/less/transport/conn"
 )
 
 const (
@@ -27,7 +27,7 @@ var (
 
 type Channel struct {
 	ctx       context.Context
-	conn      conn.Connection
+	conn      transport.Connection
 	state     int32
 	stateLock sync.Locker
 	pl        *pipeline
@@ -36,7 +36,7 @@ type Channel struct {
 	outboundTasks sync.WaitGroup
 }
 
-func NewChannel(con conn.Connection, factory PipelineFactory) *Channel {
+func NewChannel(con transport.Connection, factory PipelineFactory) *Channel {
 	ch := &Channel{
 		ctx:           context.Background(),
 		conn:          con,

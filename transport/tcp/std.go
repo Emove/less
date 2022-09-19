@@ -5,15 +5,14 @@ import (
 	"github.com/emove/less/pkg/io"
 	"github.com/emove/less/pkg/io/reader"
 	"github.com/emove/less/pkg/io/writer"
+	trans "github.com/emove/less/transport"
 	"net"
 	"sync/atomic"
 	"time"
-
-	"github.com/emove/less/transport/conn"
 )
 
 // WrapConnection wraps net.Conn to conn.Connection
-func WrapConnection(conn net.Conn) conn.Connection {
+func WrapConnection(conn net.Conn) trans.Connection {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	return &connection{
 		ctx:        ctx,
@@ -22,7 +21,7 @@ func WrapConnection(conn net.Conn) conn.Connection {
 	}
 }
 
-var _ conn.Connection = (*connection)(nil)
+var _ trans.Connection = (*connection)(nil)
 
 // connection implements conn.Connection
 type connection struct {
@@ -53,12 +52,12 @@ func (c *connection) Writer() io.Writer {
 }
 
 func (c *connection) IsActive() bool {
-	return atomic.LoadInt32(&c.closed) == conn.Active
+	return atomic.LoadInt32(&c.closed) == trans.Active
 }
 
 // Close closes the net.Conn
 func (c *connection) Close() error {
-	if atomic.CompareAndSwapInt32(&c.closed, conn.Active, conn.Inactive) {
+	if atomic.CompareAndSwapInt32(&c.closed, trans.Active, trans.Inactive) {
 		return c.delegate.Close()
 	}
 	return nil

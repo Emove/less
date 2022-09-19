@@ -12,7 +12,6 @@ import (
 	"github.com/emove/less/pkg/io"
 	"github.com/emove/less/pkg/router"
 	"github.com/emove/less/transport"
-	"github.com/emove/less/transport/conn"
 	"sync"
 	"sync/atomic"
 )
@@ -62,7 +61,7 @@ type transHandler struct {
 	closingCtx      context.Context
 }
 
-func (th *transHandler) OnConnect(ctx context.Context, con conn.Connection) (c context.Context, err error) {
+func (th *transHandler) OnConnect(ctx context.Context, con transport.Connection) (c context.Context, err error) {
 
 	if !th.isActive() {
 		return nil, errors.New("connect request was refused")
@@ -103,7 +102,7 @@ func (th *transHandler) OnConnect(ctx context.Context, con conn.Connection) (c c
 	return context.WithValue(ctx, ctxChannelKey{}, ch), nil
 }
 
-func (th *transHandler) OnMessage(ctx context.Context, _ conn.Connection) error {
+func (th *transHandler) OnMessage(ctx context.Context, _ transport.Connection) error {
 
 	if !th.isActive() {
 		return errors.New("request was refused")
@@ -120,7 +119,7 @@ func (th *transHandler) OnMessage(ctx context.Context, _ conn.Connection) error 
 	return th.OnRead(ch, reader)
 }
 
-func (th *transHandler) OnConnClosed(ctx context.Context, _ conn.Connection, err error) {
+func (th *transHandler) OnConnClosed(ctx context.Context, _ transport.Connection, err error) {
 	ch := ctx.Value(ctxChannelKey{}).(*channel.Channel)
 
 	th.closeChannel(ctx, ch, err)

@@ -146,7 +146,8 @@ func newRouter() router.Router {
 	return func(ctx context.Context, channel less.Channel, msg interface{}) (less.Handler, error) {
 		once := sync.Once{}
 		return func(ctx context.Context, ch less.Channel, message interface{}) error {
-			log.Infof("echo handler: %v\n", message)
+			ich := ctx.Value(ctxIdentifierKey{}).(*IdentifierChannel)
+			log.Infof("channel id: %d, message: %v", ich.id, message)
 			once.Do(func() {
 				_ = ch.Write("hi client!")
 			})

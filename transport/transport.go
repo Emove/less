@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"github.com/emove/less/transport/conn"
 )
 
 // EventDriver defines some func to provide cut point around a connection lifecycle
@@ -11,11 +10,11 @@ type EventDriver interface {
 	// it supports to do something like check the connection before connection active
 	// the returned context will pass though all of else events as the first parameter
 	// if the error returned, the connection will be rejected
-	OnConnect(ctx context.Context, con conn.Connection) (context.Context, error)
+	OnConnect(ctx context.Context, con Connection) (context.Context, error)
 	// OnMessage fires when receive a request
-	OnMessage(ctx context.Context, con conn.Connection) error
+	OnMessage(ctx context.Context, con Connection) error
 	// OnConnClosed should be called when the connection be closed
-	OnConnClosed(ctx context.Context, con conn.Connection, err error)
+	OnConnClosed(ctx context.Context, con Connection, err error)
 }
 
 type NewTransport func(ctx context.Context, ops ...Option) Transport
