@@ -80,9 +80,9 @@ func mockClient(t *testing.T) {
 
 func ocAddressChecker() less.OnChannel {
 	return func(ctx context.Context, ch less.Channel) (context.Context, error) {
-		if ch.RemoteAddr() != nil && ch.RemoteAddr().Network() != "tcp" && ch.RemoteAddr().String() != "127.0.0.1" {
+		if ch.RemoteAddr() != nil && ch.RemoteAddr().String() != "127.0.0.1" {
 			log.Errorf("refused a connection from: %s, network: %s", ch.RemoteAddr().String(), ch.RemoteAddr().Network())
-			return nil, errors.New("allows 127.0.0.1 address and remote network must be tcp")
+			return nil, errors.New("allows 127.0.0.1 address ")
 		}
 		log.Infof("receive a connection from: %s, network: %s", ch.RemoteAddr().String(), ch.RemoteAddr().Network())
 		return ctx, nil

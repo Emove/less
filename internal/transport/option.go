@@ -40,8 +40,8 @@ var defaultTransOptions = &Options{
 	maxSendMessageSize:    1024 * 1024 * 4,
 	maxReceiveMessageSize: 1024 * 1024 * 4,
 
-	packetCodec:  &packet.VariableLengthCodec{},
-	payloadCodec: &payload.TextPayloadCodec{},
+	packetCodec:  packet.NewVariableLengthCodec(),
+	payloadCodec: payload.NewTextCodec(),
 }
 
 func WithIdleTime(d time.Duration) Option {

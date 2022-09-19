@@ -33,7 +33,7 @@ func TestTextPayloadCodec_Marshal(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
-			te := &TextPayloadCodec{}
+			te := &textPayloadCodec{}
 			if err := te.Marshal(tt.args.message, tt.args.writer); (err != nil) && tt.wantErr {
 				t.Logf("Marshal() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -62,7 +62,7 @@ func TestTextPayloadCodec_UnMarshal(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
-			te := &TextPayloadCodec{}
+			te := &textPayloadCodec{}
 			gotMessage, err := te.UnMarshal(tt.args.reader)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("UnMarshal() error = %v, wantErr %v", err, tt.wantErr)

@@ -8,13 +8,17 @@ import (
 	iow "github.com/emove/less/pkg/io/writer"
 )
 
-type VariableLengthCodec struct{}
+func NewVariableLengthCodec() codec.PacketCodec {
+	return &variableLengthCodec{}
+}
 
-func (*VariableLengthCodec) Name() string {
+type variableLengthCodec struct{}
+
+func (*variableLengthCodec) Name() string {
 	return "variable-length-packet-codec"
 }
 
-func (*VariableLengthCodec) Encode(message interface{}, writer io.Writer, payloadCodec codec.PayloadCodec) (err error) {
+func (*variableLengthCodec) Encode(message interface{}, writer io.Writer, payloadCodec codec.PayloadCodec) (err error) {
 	header := writer.Malloc(binary.MaxVarintLen32)
 
 	bufferWriter := iow.NewBufferWriter(writer)
@@ -29,7 +33,7 @@ func (*VariableLengthCodec) Encode(message interface{}, writer io.Writer, payloa
 	return writer.Flush()
 }
 
-func (*VariableLengthCodec) Decode(reader io.Reader, payloadCodec codec.PayloadCodec) (message interface{}, err error) {
+func (*variableLengthCodec) Decode(reader io.Reader, payloadCodec codec.PayloadCodec) (message interface{}, err error) {
 
 	header, err := reader.Next(binary.MaxVarintLen32)
 	if err != nil {
