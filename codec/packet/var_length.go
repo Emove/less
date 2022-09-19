@@ -19,9 +19,12 @@ func (*variableLengthCodec) Name() string {
 }
 
 func (*variableLengthCodec) Encode(message interface{}, writer io.Writer, payloadCodec codec.PayloadCodec) (err error) {
-	header := writer.Malloc(binary.MaxVarintLen32)
+	header, err := writer.Malloc(binary.MaxVarintLen32)
+	if err != nil {
+		return
+	}
 
-	bufferWriter := iow.NewBufferWriter(writer)
+	bufferWriter := iow.WrapBufferWriter(writer)
 	defer bufferWriter.Release()
 
 	if err = payloadCodec.Marshal(message, bufferWriter); err != nil {
