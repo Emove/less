@@ -8,7 +8,6 @@ import (
 	"github.com/emove/less/internal/errors"
 	"github.com/emove/less/log"
 	trans "github.com/emove/less/transport"
-	"github.com/emove/less/transport/conn"
 )
 
 type transport struct {
@@ -109,7 +108,7 @@ func (t *transport) Close() {
 	}
 }
 
-func (t *transport) readLoop(ctx context.Context, conn conn.Connection, driver trans.EventDriver) {
+func (t *transport) readLoop(ctx context.Context, conn trans.Connection, driver trans.EventDriver) {
 
 	var err error
 	defer func() {

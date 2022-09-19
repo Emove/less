@@ -1,4 +1,4 @@
-package conn
+package transport
 
 import (
 	"github.com/emove/less/pkg/io"
