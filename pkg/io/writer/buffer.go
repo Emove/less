@@ -73,9 +73,6 @@ func (w *writer) Malloc(n int) (buf []byte) {
 // MallocLength returns the total length of the written data
 // that has not yet been submitted in the writer
 func (w *writer) MallocLength() (length int) {
-	//if w.writeDirectly {
-	//	return w.decorator.(less_io.Writer).MallocLength()
-	//}
 	return w.writeIndex
 }
 

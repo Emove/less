@@ -49,7 +49,6 @@ func (r *bufferReader) Read(buff []byte) (n int, err error) {
 			return n, err
 		}
 
-		// copy(r.buff[r.writeIndex:r.writeIndex+n], buff)
 		r.readIndex += n
 		r.writeIndex += n
 		return
@@ -153,9 +152,7 @@ func (r *bufferReader) ensureReadable(n int, buff []byte) (err error) {
 			copy(buff[:readable], r.buff[r.readIndex:r.readIndex+readable])
 		}
 		_, err = io.ReadFull(r.decorator, buff[readable:])
-		//_, err = r.decorator.Read(buff[readable:])
 	} else {
-		//_, err = r.decorator.Read(r.buff[r.writeIndex : r.writeIndex+want])
 		_, err = io.ReadFull(r.decorator, r.buff[r.writeIndex:r.writeIndex+want])
 	}
 	if err != nil {
