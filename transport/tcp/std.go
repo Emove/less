@@ -48,7 +48,7 @@ func (c *connection) Reader() io.Reader {
 
 // Writer returns a writer
 func (c *connection) Writer() io.Writer {
-	return writer.NewBufferWriterWithBuf(c.delegate)
+	return writer.NewBufferWriter(c.delegate, nil)
 }
 
 func (c *connection) IsActive() bool {

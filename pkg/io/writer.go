@@ -7,7 +7,7 @@ type Writer interface {
 	Write(buf []byte) (n int, err error)
 
 	// Malloc returns a slice containing the next n bytes from the buffer.
-	Malloc(n int) (buf []byte)
+	Malloc(n int) (buf []byte, err error)
 
 	// MallocLength returns the total length of the written data that has not yet been submitted in the writer.
 	MallocLength() (length int)

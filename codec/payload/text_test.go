@@ -21,22 +21,23 @@ func TestTextPayloadCodec_Marshal(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			args:    args{message: "hello world", writer: writer.NewBufferWriterWithBuf(buff)},
+			args:    args{message: "hello world", writer: writer.NewBufferWriter(buff)},
 			want:    "hello world",
 			wantErr: false,
 		},
 		{
-			args:    args{message: 1, writer: writer.NewBufferWriterWithBuf(buff)},
+			args:    args{message: 1, writer: writer.NewBufferWriter(buff)},
 			want:    "",
 			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
-			te := &TextPayloadCodec{}
+			te := &textPayloadCodec{}
 			if err := te.Marshal(tt.args.message, tt.args.writer); (err != nil) && tt.wantErr {
 				t.Logf("Marshal() error = %v, wantErr %v", err, tt.wantErr)
 			}
+			_ = tt.args.writer.Flush()
 			if buff.String() != tt.want {
 				t.Errorf("Marshal() want = %v, got = %v", tt.want, buff.String())
 			}
@@ -62,7 +63,7 @@ func TestTextPayloadCodec_UnMarshal(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
-			te := &TextPayloadCodec{}
+			te := &textPayloadCodec{}
 			gotMessage, err := te.UnMarshal(tt.args.reader)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("UnMarshal() error = %v, wantErr %v", err, tt.wantErr)

@@ -8,16 +8,26 @@ import (
 	iow "github.com/emove/less/pkg/io/writer"
 )
 
-type VariableLengthCodec struct{}
+// NewVariableLengthCodec returns a variable length packet codec
+func NewVariableLengthCodec() codec.PacketCodec {
+	return &variableLengthCodec{}
+}
 
-func (*VariableLengthCodec) Name() string {
+type variableLengthCodec struct{}
+
+var _ codec.PacketCodec = (*variableLengthCodec)(nil)
+
+func (*variableLengthCodec) Name() string {
 	return "variable-length-packet-codec"
 }
 
-func (*VariableLengthCodec) Encode(message interface{}, writer io.Writer, payloadCodec codec.PayloadCodec) (err error) {
-	header := writer.Malloc(binary.MaxVarintLen32)
+func (*variableLengthCodec) Encode(message interface{}, writer io.Writer, payloadCodec codec.PayloadCodec) (err error) {
+	header, err := writer.Malloc(binary.MaxVarintLen32)
+	if err != nil {
+		return
+	}
 
-	bufferWriter := iow.NewBufferWriter(writer)
+	bufferWriter := iow.WrapBufferWriter(writer)
 	defer bufferWriter.Release()
 
 	if err = payloadCodec.Marshal(message, bufferWriter); err != nil {
@@ -29,7 +39,7 @@ func (*VariableLengthCodec) Encode(message interface{}, writer io.Writer, payloa
 	return writer.Flush()
 }
 
-func (*VariableLengthCodec) Decode(reader io.Reader, payloadCodec codec.PayloadCodec) (message interface{}, err error) {
+func (*variableLengthCodec) Decode(reader io.Reader, payloadCodec codec.PayloadCodec) (message interface{}, err error) {
 
 	header, err := reader.Next(binary.MaxVarintLen32)
 	if err != nil {
