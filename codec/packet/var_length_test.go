@@ -23,14 +23,14 @@ func TestVariableLengthCodec_Decode(t *testing.T) {
 		wantErr     bool
 	}{
 		{
-			args:        args{reader: reader([]byte("hello world")), payloadCodec: &payload.TextPayloadCodec{}},
+			args:        args{reader: reader([]byte("hello world")), payloadCodec: payload.NewTextCodec()},
 			wantMessage: "hello world",
 			wantErr:     false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
-			va := &VariableLengthCodec{}
+			va := &variableLengthCodec{}
 			gotMessage, err := va.Decode(tt.args.reader, tt.args.payloadCodec)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Decode() error = %v, wantErr %v", err, tt.wantErr)
@@ -56,14 +56,14 @@ func TestVariableLengthCodec_Encode(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			args:    args{message: "hello world", writer: writer.NewBufferWriterWithBuf(buff), payloadCodec: &payload.TextPayloadCodec{}},
+			args:    args{message: "hello world", writer: writer.NewBufferWriter(buff), payloadCodec: payload.NewTextCodec()},
 			want:    "hello world",
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
-			va := &VariableLengthCodec{}
+			va := &variableLengthCodec{}
 			if err := va.Encode(tt.args.message, tt.args.writer, tt.args.payloadCodec); (err != nil) != tt.wantErr {
 				t.Errorf("Encode() error = %v, wantErr %v", err, tt.wantErr)
 			}

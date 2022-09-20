@@ -61,8 +61,6 @@ func (t *transport) Listen(addr string, driver trans.EventDriver) error {
 		wrapped := WrapConnection(con)
 		cc, err = driver.OnConnect(cc, wrapped)
 		if err != nil {
-			driver.OnConnClosed(cc, wrapped, err)
-			_ = con.Close()
 			continue
 		}
 

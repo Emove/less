@@ -64,7 +64,7 @@ type transHandler struct {
 func (th *transHandler) OnConnect(ctx context.Context, con transport.Connection) (c context.Context, err error) {
 
 	if !th.isActive() {
-		return nil, errors.New("connect request was refused")
+		return ctx, errors.New("connect request was refused")
 	}
 	var ch *channel.Channel
 	defer func() {
@@ -72,11 +72,13 @@ func (th *transHandler) OnConnect(ctx context.Context, con transport.Connection)
 			log.Errorw("err", fmt.Sprintf("panic on channel: %v", e))
 			err = e
 		})
+		closingCtx := context.Background()
 		if !th.isActive() {
 			err = errors.New("transport was closed")
+			closingCtx = th.closingCtx
 		}
 		if err != nil && ch != nil {
-			_ = ch.Close(th.closingCtx, err)
+			_ = ch.Close(closingCtx, err)
 		}
 	}()
 
@@ -91,9 +93,8 @@ func (th *transHandler) OnConnect(ctx context.Context, con transport.Connection)
 	ch = channel.NewChannel(con, th.pipelineFactory)
 
 	if err = ch.GetPipeline().FireOnChannel(ctx); err != nil {
-		_ = ch.Close(context.Background(), err)
 		log.Debugf("connect request from: %s failed, err: %v", con.RemoteAddr().String(), err)
-		return nil, err
+		return ctx, err
 	}
 
 	th.channelCount.Inc()
