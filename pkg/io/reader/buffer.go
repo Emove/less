@@ -163,13 +163,20 @@ func (r *bufferReader) ensureReadable(n int, buff []byte) (err error) {
 }
 
 func (r *bufferReader) growth(want int) {
-	//l := len(r.buff)
-	//l <<= 1
-	//buf := make([]byte, l)
-	//copy(buf, r.buff)
-	//
-	//r.buff = buf
 	// growing by slice default strategy
-	buf := make([]byte, want)
-	r.buff = append(r.buff, buf...)
+	//buf := make([]byte, want)
+	//r.buff = append(r.buff, buf...)
+
+	if l := len(r.buff); want <= cap(r.buff)-l {
+		r.buff = r.buff[:l+want]
+	}
+	min := r.writeIndex + want
+	capacity := cap(r.buff)
+	for capacity < min {
+		capacity <<= 1
+	}
+
+	buf := make([]byte, capacity)
+	copy(buf, r.buff)
+	r.buff = buf
 }
