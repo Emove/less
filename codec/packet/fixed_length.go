@@ -7,6 +7,7 @@ import (
 	iow "github.com/emove/less/pkg/io/writer"
 )
 
+// NewFixedLengthCodec returns a fixed length packet codec
 func NewFixedLengthCodec(length uint32) codec.PacketCodec {
 	return &fixedLengthCodec{length: length}
 }

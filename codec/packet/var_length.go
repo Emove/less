@@ -8,6 +8,7 @@ import (
 	iow "github.com/emove/less/pkg/io/writer"
 )
 
+// NewVariableLengthCodec returns a variable length packet codec
 func NewVariableLengthCodec() codec.PacketCodec {
 	return &variableLengthCodec{}
 }

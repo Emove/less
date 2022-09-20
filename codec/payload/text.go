@@ -8,6 +8,7 @@ import (
 
 var ErrMessageNotString = errors.New("message can not convert to string")
 
+// NewTextCodec returns a text payload codec
 func NewTextCodec() codec.PayloadCodec {
 	return &textPayloadCodec{}
 }

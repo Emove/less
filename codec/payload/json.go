@@ -14,7 +14,7 @@ func NewJSONCodecWithType(msg interface{}) codec.PayloadCodec {
 	}
 }
 
-// NewJSONCodec uses map when json unmarshal
+// NewJSONCodec returns a json payload codec that using map as receiver when json unmarshal
 func NewJSONCodec() codec.PayloadCodec {
 	return &jsonPayloadCodec{}
 }

@@ -11,17 +11,17 @@ var ErrMsgSizeGreaterThanMaxLength = errors.New("message package size greater th
 
 type Option func(dc *delimiterCodec)
 
-// DisableAutoAppendDelimiter appends delimiter when encode, the default value is true
-func DisableAutoAppendDelimiter(append bool) Option {
+// DisableAutoAppendDelimiter disables the behavior of automatic appends delimiter when encode
+func DisableAutoAppendDelimiter() Option {
 	return func(dc *delimiterCodec) {
-		dc.autoAppendDelimiter = append
+		dc.autoAppendDelimiter = false
 	}
 }
 
-// DisableStripDelimiter strip delimiter when decode, the default value is true
-func DisableStripDelimiter(strip bool) Option {
+// DisableStripDelimiter disable that strip delimiter when decode
+func DisableStripDelimiter() Option {
 	return func(dc *delimiterCodec) {
-		dc.stripDelimiter = strip
+		dc.stripDelimiter = false
 	}
 }
 

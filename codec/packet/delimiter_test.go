@@ -51,7 +51,7 @@ func Test_delimiterCodec_Decode(t *testing.T) {
 		{
 			name:        "forth",
 			times:       1,
-			codec:       NewDelimiterCodec("\n", 8, DisableStripDelimiter(false)),
+			codec:       NewDelimiterCodec("\n", 8, DisableStripDelimiter()),
 			args:        args{reader: ior.NewBufferReader(newTestReader([]byte("1234567\n"))), payloadCodec: payload.NewTextCodec()},
 			wantMessage: []string{"1234567\n"},
 			wantErr:     false,
@@ -97,7 +97,7 @@ func Test_delimiterCodec_Encode(t *testing.T) {
 		},
 		{
 			name:    "second",
-			codec:   NewDelimiterCodec("\t", 8, DisableAutoAppendDelimiter(false)),
+			codec:   NewDelimiterCodec("\t", 8, DisableAutoAppendDelimiter()),
 			args:    args{writer: writer.NewBufferWriter(buff), payloadCodec: payload.NewTextCodec()},
 			msg:     []string{"1234567\t", "7654321\t"},
 			want:    []byte("1234567\t7654321\t"),
