@@ -66,12 +66,15 @@ func (pl *pipeline) AddOutbound(outbound ...less.Middleware) {
 }
 
 func (pl *pipeline) FireOnChannel(ctx context.Context) (err error) {
+	pl.ch.SetContext(ctx)
 	for _, onChannel := range pl.onChannelChain {
 		ctx, err = onChannel(ctx, pl.ch)
 		if err != nil {
 			return err
 		}
-		pl.ch.SetContext(ctx)
+		if ctx != nil {
+			pl.ch.SetContext(ctx)
+		}
 	}
 	pl.ch.active()
 	return nil
