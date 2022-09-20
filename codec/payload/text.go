@@ -12,6 +12,8 @@ func NewTextCodec() codec.PayloadCodec {
 	return &textPayloadCodec{}
 }
 
+var _ codec.PayloadCodec = (*textPayloadCodec)(nil)
+
 type textPayloadCodec struct {
 }
 

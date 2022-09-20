@@ -14,6 +14,8 @@ func NewVariableLengthCodec() codec.PacketCodec {
 
 type variableLengthCodec struct{}
 
+var _ codec.PacketCodec = (*variableLengthCodec)(nil)
+
 func (*variableLengthCodec) Name() string {
 	return "variable-length-packet-codec"
 }

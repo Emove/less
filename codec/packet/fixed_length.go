@@ -11,6 +11,8 @@ func NewFixedLengthCodec(length uint32) codec.PacketCodec {
 	return &fixedLengthCodec{length: length}
 }
 
+var _ codec.PacketCodec = (*fixedLengthCodec)(nil)
+
 type fixedLengthCodec struct {
 	length uint32
 }

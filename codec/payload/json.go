@@ -19,6 +19,8 @@ func NewJSONCodec() codec.PayloadCodec {
 	return &jsonPayloadCodec{}
 }
 
+var _ codec.PayloadCodec = (*jsonPayloadCodec)(nil)
+
 type jsonPayloadCodec struct {
 	msgType reflect.Type
 }
