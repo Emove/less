@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/emove/less"
-	"github.com/emove/less/log"
-	"github.com/emove/less/pkg/router"
 	"net"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/emove/less"
+	"github.com/emove/less/log"
+	"github.com/emove/less/pkg/router"
 )
 
 func newServer() *Server {
@@ -18,7 +19,10 @@ func newServer() *Server {
 	onChannelClosedOption := WithOnChannelClosed(deleteOnChannelClosed())
 	inboundOption := WithInboundMiddleware(newInboundMiddleware())
 	outboundOption := WithOutboundMiddleware(newOutboundMiddleware())
-	return NewServer("localhost:9999", onChannelOption, onChannelClosedOption, inboundOption, outboundOption, WithRouter(newRouter()))
+	return NewServer("localhost:9999", onChannelOption, onChannelClosedOption,
+		inboundOption, outboundOption, WithRouter(newRouter()),
+		//DisableGoPool(),
+	)
 }
 
 var wg = &sync.WaitGroup{}

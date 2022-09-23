@@ -1,13 +1,14 @@
 package transport
 
 import (
+	"math"
+	"time"
+
 	"github.com/emove/less"
 	"github.com/emove/less/codec"
 	"github.com/emove/less/codec/packet"
 	"github.com/emove/less/codec/payload"
 	"github.com/emove/less/pkg/router"
-	"math"
-	"time"
 )
 
 type Option func(ops *Options)
