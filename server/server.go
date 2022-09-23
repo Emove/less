@@ -3,13 +3,15 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
+	"time"
+
 	"github.com/emove/less"
 	inter_server "github.com/emove/less/internal/server"
 	"github.com/emove/less/internal/transport"
+	_go "github.com/emove/less/pkg/pool/go"
 	"github.com/emove/less/pkg/router"
 	trans "github.com/emove/less/transport"
-	"net"
-	"time"
 )
 
 type Server struct {
@@ -35,6 +37,10 @@ func (srv *Server) Run() {
 
 	srv.handler = transport.NewTransHandler(srv.ops.TransOptions...)
 
+	if !srv.ops.DisableGPool {
+		_go.Init()
+	}
+
 	go func() {
 		err := srv.ops.Transport.Listen(srv.addr, srv.handler)
 		if err != nil {
@@ -46,6 +52,7 @@ func (srv *Server) Run() {
 func (srv *Server) Shutdown() {
 	_ = srv.handler.Close(context.Background(), nil)
 	srv.ops.Transport.Close()
+	_go.Release()
 }
 
 type Option interface {
@@ -131,6 +138,18 @@ func MaxSendMessageSize(size uint32) Option {
 func MaxReceiveMessageSize(size uint32) Option {
 	return newOption(func(ops *inter_server.Options) {
 		ops.TransOptions = append(ops.TransOptions, transport.WithMaxReceiveMessageSize(size))
+	})
+}
+
+func DisableGoPool() Option {
+	return newOption(func(ops *inter_server.Options) {
+		ops.DisableGPool = true
+	})
+}
+
+func MaxGoPoolCapacity(size int) Option {
+	return newOption(func(ops *inter_server.Options) {
+		_go.DefaultAntsPoolSize = size
 	})
 }
 

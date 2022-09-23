@@ -10,9 +10,10 @@ import (
 )
 
 var DefaultServerOptions = &Options{
-	Addr:      "127.0.0.1",
-	Port:      "8888",
-	Transport: tcp.New(),
+	Addr:         "127.0.0.1",
+	Port:         "8888",
+	Transport:    tcp.New(),
+	DisableGPool: false,
 }
 
 type Options struct {
@@ -27,4 +28,5 @@ type Options struct {
 	InboundMiddleware  []less.Middleware
 	OutboundMiddleware []less.Middleware
 	TransOptions       []transport.Option
+	DisableGPool       bool
 }

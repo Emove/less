@@ -4,16 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
+
 	"github.com/emove/less"
 	"github.com/emove/less/internal/channel"
 	less_atomic "github.com/emove/less/internal/utils/atomic"
 	"github.com/emove/less/internal/utils/recovery"
 	"github.com/emove/less/log"
 	"github.com/emove/less/pkg/io"
+	_go "github.com/emove/less/pkg/pool/go"
 	"github.com/emove/less/pkg/router"
 	"github.com/emove/less/transport"
-	"sync"
-	"sync/atomic"
 )
 
 type BoundHandler interface {
@@ -148,12 +150,11 @@ func (th *transHandler) OnRead(ch *channel.Channel, reader io.Reader) error {
 		log.Errorf("receive a message but message size greater than max-receive-message-size, message size: %d, max: %d", reader.Length(), th.ops.maxReceiveMessageSize)
 	}
 
-	// TODO goroutine pool
-	err = ch.GetPipeline().FireInbound(msg)
-	if err != nil {
-		log.Errorw("remote", ch.RemoteAddr(), log.DefaultMsgKey, msg, "err", err)
-		return err
-	}
+	_go.Submit(func() {
+		if err = ch.GetPipeline().FireInbound(msg); err != nil {
+			log.Errorw("remote", ch.RemoteAddr(), log.DefaultMsgKey, msg, "err", err)
+		}
+	})
 
 	return nil
 }
@@ -185,15 +186,14 @@ func (th *transHandler) Close(ctx context.Context, err error) error {
 	done := make(chan struct{})
 	closingChannels := sync.WaitGroup{}
 
-	go func() {
-
+	_go.Submit(func() {
 		th.channels.Range(func(key, value interface{}) bool {
 			ch := key.(*channel.Channel)
 			closingChannels.Add(1)
-			go func() {
+			_go.Submit(func() {
 				th.closeChannel(ctx, ch, err)
 				closingChannels.Done()
-			}()
+			})
 			return true
 		})
 
@@ -201,7 +201,7 @@ func (th *transHandler) Close(ctx context.Context, err error) error {
 		closingChannels.Wait()
 
 		close(done)
-	}()
+	})
 
 	for {
 		select {

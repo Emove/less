@@ -3,13 +3,14 @@ package channel
 import (
 	"context"
 	"errors"
-	"github.com/emove/less/transport"
 	"net"
 	"sync"
 	"sync/atomic"
 
 	"github.com/emove/less"
 	"github.com/emove/less/pkg/io"
+	_go "github.com/emove/less/pkg/pool/go"
+	"github.com/emove/less/transport"
 )
 
 const (
@@ -102,11 +103,12 @@ func (ch *Channel) Close(ctx context.Context, err error) error {
 	ch.pl.FireOnChannelClosed(err)
 
 	done := make(chan struct{})
-	go func() {
+
+	_go.Submit(func() {
 		// waiting for all task done
 		ch.outboundTasks.Wait()
 		close(done)
-	}()
+	})
 
 	for {
 		select {
