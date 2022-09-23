@@ -8,7 +8,7 @@ import (
 	"github.com/emove/less/codec"
 	"github.com/emove/less/codec/packet"
 	"github.com/emove/less/codec/payload"
-	"github.com/emove/less/pkg/router"
+	"github.com/emove/less/router"
 )
 
 type Option func(ops *Options)

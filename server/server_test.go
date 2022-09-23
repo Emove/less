@@ -11,7 +11,7 @@ import (
 
 	"github.com/emove/less"
 	"github.com/emove/less/log"
-	"github.com/emove/less/pkg/router"
+	"github.com/emove/less/router"
 )
 
 func newServer() *Server {

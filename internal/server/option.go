@@ -4,7 +4,7 @@ import (
 	"github.com/emove/less"
 	"github.com/emove/less/codec"
 	"github.com/emove/less/internal/transport"
-	"github.com/emove/less/pkg/router"
+	router2 "github.com/emove/less/router"
 	trans "github.com/emove/less/transport"
 	"github.com/emove/less/transport/tcp"
 )
@@ -22,7 +22,7 @@ type Options struct {
 	Transport          trans.Transport
 	PacketCodec        codec.PacketCodec
 	PayloadCodec       codec.PayloadCodec
-	Router             router.Router
+	Router             router2.Router
 	OnChannels         []less.OnChannel
 	OnChannelClosed    []less.OnChannelClosed
 	InboundMiddleware  []less.Middleware
