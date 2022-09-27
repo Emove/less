@@ -1,11 +1,12 @@
 package timewheel
 
 import (
-	"github.com/stretchr/testify/assert"
 	"log"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_ScheduleFunc(t *testing.T) {

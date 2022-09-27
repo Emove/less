@@ -2,10 +2,11 @@ package msg
 
 import (
 	"bytes"
+	"testing"
+
 	"github.com/emove/less/pkg/io/reader"
 	"github.com/emove/less/pkg/io/writer"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestLessMessagePayloadCodec(t *testing.T) {

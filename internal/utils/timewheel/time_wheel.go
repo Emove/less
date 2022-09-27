@@ -3,10 +3,11 @@ package timewheel
 import (
 	"context"
 	"fmt"
-	_go "github.com/emove/less/pkg/pool/go"
 	"sync/atomic"
 	"time"
 	"unsafe"
+
+	_go "github.com/emove/less/pkg/pool/go"
 )
 
 const (

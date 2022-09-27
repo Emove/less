@@ -1,8 +1,9 @@
 package keepalive
 
 import (
-	"github.com/emove/less"
 	"time"
+
+	"github.com/emove/less"
 )
 
 // KeepaliveParameters is used to config channel keepalive and max-age parameters

@@ -2,6 +2,7 @@ package msg
 
 import (
 	"encoding/binary"
+
 	"github.com/emove/less/codec"
 	"github.com/emove/less/pkg/io"
 )
