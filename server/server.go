@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"github.com/emove/less/keepalive"
 	"net"
 	"time"
 
@@ -98,6 +99,12 @@ func WithOnChannelClosed(onChannelClosed ...less.OnChannelClosed) Option {
 func WithRouter(router router.Router) Option {
 	return newOption(func(ops *inter_server.Options) {
 		ops.TransOptions = append(ops.TransOptions, transport.WithRouter(router))
+	})
+}
+
+func KeepaliveParams(kp keepalive.KeepaliveParameters) Option {
+	return newOption(func(ops *inter_server.Options) {
+		ops.TransOptions = append(ops.TransOptions, transport.Keepalive(kp))
 	})
 }
 
