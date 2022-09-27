@@ -4,6 +4,8 @@ import (
 	"context"
 )
 
+type Interceptor func(message interface{}) bool
+
 type Handler func(ctx context.Context, ch Channel, message interface{}) error
 
 type Middleware func(handler Handler) Handler
