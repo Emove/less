@@ -26,6 +26,11 @@ func TestTextPayloadCodec_Marshal(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			args:    args{message: []byte("hello world"), writer: writer.NewBufferWriter(buff)},
+			want:    "hello world",
+			wantErr: false,
+		},
+		{
 			args:    args{message: 1, writer: writer.NewBufferWriter(buff)},
 			want:    "",
 			wantErr: true,
