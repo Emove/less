@@ -23,12 +23,14 @@ func (*textPayloadCodec) Name() string {
 }
 
 func (*textPayloadCodec) Marshal(message interface{}, writer io.Writer) (err error) {
-	content, ok := message.(string)
-	if !ok {
+	switch message.(type) {
+	case string:
+		_, err = writer.Write([]byte(message.(string)))
+	case []byte:
+		_, err = writer.Write(message.([]byte))
+	default:
 		return ErrMessageNotString
 	}
-
-	_, err = writer.Write([]byte(content))
 	return
 }
 

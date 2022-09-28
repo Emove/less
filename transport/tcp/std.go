@@ -2,13 +2,14 @@ package tcp
 
 import (
 	"context"
+	"net"
+	"sync/atomic"
+	"time"
+
 	"github.com/emove/less/pkg/io"
 	"github.com/emove/less/pkg/io/reader"
 	"github.com/emove/less/pkg/io/writer"
 	trans "github.com/emove/less/transport"
-	"net"
-	"sync/atomic"
-	"time"
 )
 
 // WrapConnection wraps net.Conn to conn.Connection

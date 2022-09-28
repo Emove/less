@@ -1,8 +1,9 @@
 package tcp
 
 import (
-	trans "github.com/emove/less/transport"
 	"time"
+
+	trans "github.com/emove/less/transport"
 )
 
 type TCPOptions struct {

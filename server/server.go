@@ -9,6 +9,7 @@ import (
 	"github.com/emove/less"
 	inter_server "github.com/emove/less/internal/server"
 	"github.com/emove/less/internal/transport"
+	"github.com/emove/less/keepalive"
 	_go "github.com/emove/less/pkg/pool/go"
 	"github.com/emove/less/router"
 	trans "github.com/emove/less/transport"
@@ -98,6 +99,12 @@ func WithOnChannelClosed(onChannelClosed ...less.OnChannelClosed) Option {
 func WithRouter(router router.Router) Option {
 	return newOption(func(ops *inter_server.Options) {
 		ops.TransOptions = append(ops.TransOptions, transport.WithRouter(router))
+	})
+}
+
+func KeepaliveParams(kp keepalive.KeepaliveParameters) Option {
+	return newOption(func(ops *inter_server.Options) {
+		ops.TransOptions = append(ops.TransOptions, transport.Keepalive(kp))
 	})
 }
 
