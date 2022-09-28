@@ -12,7 +12,6 @@ import (
 	"github.com/emove/less/keepalive"
 	"github.com/emove/less/log"
 	"github.com/emove/less/router"
-	"github.com/emove/less/server"
 	"github.com/emove/less/test/fake_client"
 )
 
@@ -20,9 +19,9 @@ var ping = []byte("ping")
 var pong = []byte("pong")
 var goaway = []byte("go away")
 
-func newServer() *server.Server {
-	onChannelOption := server.WithOnChannel(ocIdentifier())
-	onChannelClosedOption := server.WithOnChannelClosed(deleteOnChannelClosed())
+func newServer() *less.Server {
+	onChannelOption := less.WithOnChannel(ocIdentifier())
+	onChannelClosedOption := less.WithOnChannelClosed(deleteOnChannelClosed())
 	kp := keepalive.KeepaliveParameters{
 		MaxChannelIdleTime: 3 * time.Second,
 		MaxChannelAge:      10 * time.Second,
@@ -48,7 +47,7 @@ func newServer() *server.Server {
 			},
 		},
 	}
-	return server.NewServer("localhost:9999", onChannelOption, onChannelClosedOption, server.WithRouter(newRouter()), server.KeepaliveParams(kp))
+	return less.NewServer("localhost:9999", onChannelOption, onChannelClosedOption, less.WithRouter(newRouter()), less.KeepaliveParams(kp))
 }
 
 var wg = &sync.WaitGroup{}
