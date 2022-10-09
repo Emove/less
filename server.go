@@ -1,18 +1,15 @@
-package server
+package less
 
 import (
 	"context"
 	"fmt"
-	"net"
-	"time"
-
-	"github.com/emove/less"
 	inter_server "github.com/emove/less/internal/server"
 	"github.com/emove/less/internal/transport"
 	"github.com/emove/less/keepalive"
 	_go "github.com/emove/less/pkg/pool/go"
 	"github.com/emove/less/router"
 	trans "github.com/emove/less/transport"
+	"net"
 )
 
 type Server struct {
@@ -80,7 +77,7 @@ func WithTransport(transport trans.Transport) Option {
 	})
 }
 
-func WithOnChannel(onChannel ...less.OnChannel) Option {
+func WithOnChannel(onChannel ...OnChannel) Option {
 	return newOption(func(ops *inter_server.Options) {
 		if len(onChannel) > 0 {
 			ops.TransOptions = append(ops.TransOptions, transport.OnChannel(onChannel...))
@@ -88,7 +85,7 @@ func WithOnChannel(onChannel ...less.OnChannel) Option {
 	})
 }
 
-func WithOnChannelClosed(onChannelClosed ...less.OnChannelClosed) Option {
+func WithOnChannelClosed(onChannelClosed ...OnChannelClosed) Option {
 	return newOption(func(ops *inter_server.Options) {
 		if len(onChannelClosed) > 0 {
 			ops.TransOptions = append(ops.TransOptions, transport.OnChannelClosed(onChannelClosed...))
@@ -108,7 +105,7 @@ func KeepaliveParams(kp keepalive.KeepaliveParameters) Option {
 	})
 }
 
-func WithInboundMiddleware(mws ...less.Middleware) Option {
+func WithInboundMiddleware(mws ...Middleware) Option {
 	return newOption(func(ops *inter_server.Options) {
 		if len(mws) > 0 {
 			ops.TransOptions = append(ops.TransOptions, transport.WithInbound(mws...))
@@ -116,17 +113,11 @@ func WithInboundMiddleware(mws ...less.Middleware) Option {
 	})
 }
 
-func WithOutboundMiddleware(mws ...less.Middleware) Option {
+func WithOutboundMiddleware(mws ...Middleware) Option {
 	return newOption(func(ops *inter_server.Options) {
 		if len(mws) > 0 {
 			ops.TransOptions = append(ops.TransOptions, transport.WithOutbound(mws...))
 		}
-	})
-}
-
-func MaxIdleTime(d time.Duration) Option {
-	return newOption(func(ops *inter_server.Options) {
-		ops.TransOptions = append(ops.TransOptions, transport.WithIdleTime(d))
 	})
 }
 

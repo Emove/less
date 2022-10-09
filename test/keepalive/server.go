@@ -12,7 +12,6 @@ import (
 	"github.com/emove/less/keepalive"
 	"github.com/emove/less/log"
 	"github.com/emove/less/router"
-	"github.com/emove/less/server"
 	"github.com/emove/less/test/fake_client"
 )
 

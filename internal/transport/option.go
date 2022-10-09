@@ -18,8 +18,6 @@ import (
 type Option func(ops *Options)
 
 type Options struct {
-	idleTimeout time.Duration
-
 	maxConnectionSize     uint32
 	maxSendMessageSize    uint32
 	maxReceiveMessageSize uint32
@@ -40,7 +38,6 @@ type Options struct {
 }
 
 var defaultTransOptions = &Options{
-	idleTimeout:           time.Second * 30,
 	maxConnectionSize:     math.MaxUint32,  // infinity
 	maxSendMessageSize:    1024 * 1024 * 4, // 4M
 	maxReceiveMessageSize: 1024 * 1024 * 4, // 4M
@@ -58,12 +55,6 @@ var defaultTransOptions = &Options{
 			GoAwayRecognizer: defaultGoAwayRecognizer,
 		},
 	},
-}
-
-func WithIdleTime(d time.Duration) Option {
-	return func(ops *Options) {
-		ops.idleTimeout = d
-	}
 }
 
 func WithMaxConnectionSize(size uint32) Option {
