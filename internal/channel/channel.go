@@ -116,7 +116,9 @@ func (ch *Channel) Close(ctx context.Context, err error) error {
 			_ = ch.conn.Close()
 		}()
 
+		//log.Debugf("[channel] waiting for read tasks")
 		ch.tasks.WaitReadTask()
+		//log.Debugf("[channel] read tasks done")
 
 		// fire OnChannelClosed hook after inbound tasks finished
 		// to avoid causing errors in case of customer holding that
@@ -126,7 +128,9 @@ func (ch *Channel) Close(ctx context.Context, err error) error {
 		done := make(chan struct{})
 		_go.Submit(func() {
 			// waiting for all outbound tasks done
+			//log.Debugf("[channel] waiting for write tasks")
 			ch.tasks.WaitWriteTask()
+			//log.Debugf("[channel] write tasks done")
 			close(done)
 		})
 
@@ -208,8 +212,28 @@ func (ch *Channel) Writeable() bool {
 	return ch.calState(writeable)
 }
 
+func (ch *Channel) WriteDirectly(msg interface{}) error {
+	if ch.calState(writeable) {
+		return ch.pl.FireOutbound(msg)
+	}
+	return ErrChannelWriterClosed
+}
+
 func (ch *Channel) Side() int {
 	return ch.side
+}
+
+// Recorder returns a middleware to record channel state
+func Recorder(event int) less.Middleware {
+	return func(handler less.Handler) less.Handler {
+		return func(ctx context.Context, c less.Channel, message interface{}) error {
+			ch := c.(*Channel)
+			ch.addTask(event)
+			err := handler(ctx, ch, message)
+			ch.tasks.Done(event)
+			return err
+		}
+	}
 }
 
 func (ch *Channel) close(mod int32) {
@@ -231,22 +255,6 @@ func (ch *Channel) active() {
 
 func (ch *Channel) calState(state int32) bool {
 	return atomic.LoadInt32(&ch.state)&state == state
-}
-
-func (ch *Channel) addInboundTask() {
-	ch.addTask(ReadEvent)
-}
-
-func (ch *Channel) inboundTaskDone() {
-	ch.tasks.Done(ReadEvent)
-}
-
-func (ch *Channel) addOutboundTask() {
-	ch.addTask(WriteEvent)
-}
-
-func (ch *Channel) outboundTaskDone() {
-	ch.tasks.Done(WriteEvent)
 }
 
 func (ch *Channel) addTask(event int) {

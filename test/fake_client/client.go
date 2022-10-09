@@ -59,6 +59,11 @@ func (c *Client) Close() {
 }
 
 func (c *Client) read() {
+	defer func() {
+		if a := recover(); a != nil {
+			// ignore
+		}
+	}()
 	for {
 		select {
 		case <-c.ctx.Done():
