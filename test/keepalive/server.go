@@ -19,45 +19,26 @@ var ping = []byte("ping")
 var pong = []byte("pong")
 var goaway = []byte("go away")
 
-func newServer() *less.Server {
-	onChannelOption := less.WithOnChannel(ocIdentifier())
-	onChannelClosedOption := less.WithOnChannelClosed(deleteOnChannelClosed())
-	kp := keepalive.KeepaliveParameters{
-		MaxChannelIdleTime: 3 * time.Second,
-		MaxChannelAge:      10 * time.Second,
-		HealthParams: &keepalive.HealthParams{
-			Time:    3 * time.Second,
-			Timeout: time.Second,
-			Ping:    ping,
-			PingRecognizer: func(message interface{}) bool {
-				content, ok := message.([]byte)
-				return ok && string(content) == "ping"
-			},
-			Pong: pong,
-			PongRecognizer: func(message interface{}) bool {
-				content, ok := message.([]byte)
-				return ok && string(content) == "pong"
-			},
-		},
-		GoAwayParams: &keepalive.GoAwayParams{
-			GoAway: goaway,
-			GoAwayRecognizer: func(message interface{}) bool {
-				content, ok := message.([]byte)
-				return ok && string(content) == "go away"
-			},
-		},
+func newServer(kp *keepalive.KeepaliveParameters) *server.Server {
+	onChannelOption := server.WithOnChannel(ocIdentifier())
+	onChannelClosedOption := server.WithOnChannelClosed(deleteOnChannelClosed())
+	if kp != nil {
+		return server.NewServer("localhost:9999", onChannelOption, onChannelClosedOption, server.WithRouter(newRouter()), server.KeepaliveParams(*kp))
 	}
-	return less.NewServer("localhost:9999", onChannelOption, onChannelClosedOption, less.WithRouter(newRouter()), less.KeepaliveParams(kp))
+	return server.NewServer("localhost:9999", onChannelOption, onChannelClosedOption, server.WithRouter(newRouter()))
 }
 
 var wg = &sync.WaitGroup{}
 
-func KeepaliveServer() {
-	server := newServer()
+func KeepaliveServer(kp *keepalive.KeepaliveParameters) {
+	server := newServer(kp)
 
 	server.Run()
 
 	wg.Add(1)
+	time.AfterFunc(20*time.Second, func() {
+		wg.Done()
+	})
 
 	write := func(conn net.Conn, msg string) {
 		header := make([]byte, binary.MaxVarintLen32)
@@ -75,7 +56,7 @@ func KeepaliveServer() {
 		m := string(msg)
 		log.Infof("client receive: %s", m)
 		if m == "ping" {
-			//time.Sleep(2 * time.Second)
+			time.Sleep(2 * time.Second)
 			write(conn, "pong")
 		}
 
@@ -88,10 +69,12 @@ func KeepaliveServer() {
 
 	c.Dial()
 
-	for i := 0; i < 2; i++ {
-		write(cc, fmt.Sprintf("client msg%d", i))
-		time.Sleep(4 * time.Second)
-	}
+	go func() {
+		for i := 0; i < 2; i++ {
+			write(cc, fmt.Sprintf("client msg%d", i))
+			time.Sleep(4 * time.Second)
+		}
+	}()
 
 	wg.Wait()
 	server.Shutdown()
@@ -129,8 +112,8 @@ func deleteOnChannelClosed() less.OnChannelClosed {
 }
 
 func newRouter() router.Router {
+	once := sync.Once{}
 	return func(ctx context.Context, channel less.Channel, msg interface{}) (less.Handler, error) {
-		once := sync.Once{}
 		return func(ctx context.Context, ch less.Channel, message interface{}) error {
 			ich := ctx.Value(ctxIdentifierKey{}).(*IdentifierChannel)
 			log.Infof("channel id: %d, message: %v", ich.id, message)

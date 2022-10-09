@@ -102,9 +102,6 @@ func (pl *pipeline) FireInbound(message interface{}) error {
 		mws = less.Chain(mws, pl.router)
 	}
 
-	ch.addInboundTask()
-	defer ch.inboundTaskDone()
-
 	return mws(emptyHandler)(ch.Context(), pl.ch, message)
 }
 
@@ -113,8 +110,6 @@ func (pl *pipeline) FireOutbound(message interface{}) error {
 	ch := pl.ch
 	mws := less.Chain(less.Chain(pl.chOut...), less.Chain(pl.outbound...))
 	handler := pl.outboundHandler
-	ch.addOutboundTask()
-	defer ch.outboundTaskDone()
 
 	if handler == nil {
 		handler = emptyHandler

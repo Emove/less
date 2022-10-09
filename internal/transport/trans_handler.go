@@ -47,11 +47,15 @@ func NewTransHandler(ops ...Option) TransHandler {
 		th.closeChannel(ctx, ch.(*channel.Channel), err)
 	}}, th.ops.onChannelClosed...)
 
+	if opts.useLessMsgCodec {
+		opts.payloadCodec = msg.NewLessMsgPayloadCodec(opts.payloadCodec)
+	}
+
 	inbound := opts.inbound
 	outbound := opts.outbound
 
 	healthParams := th.ops.kp.HealthParams
-	if healthParams.Time > 0 {
+	if healthParams != nil && healthParams.Time > 0 {
 		kgetter := func(ch *channel.Channel) *keeper {
 			val, ok := th.channels.Load(ch)
 			if !ok {
@@ -59,12 +63,12 @@ func NewTransHandler(ops ...Option) TransHandler {
 			}
 			return val.(*keeper)
 		}
-		inbound = append([]less.Middleware{KeepaliveMiddleware(kgetter)}, inbound...)
+		inbound = append([]less.Middleware{KeepaliveMiddleware(kgetter), channel.Recorder(channel.ReadEvent)}, inbound...)
+	} else {
+		inbound = append([]less.Middleware{channel.Recorder(channel.ReadEvent)}, inbound...)
 	}
 
-	if opts.useLessMsgCodec {
-		opts.payloadCodec = msg.NewLessMsgPayloadCodec(opts.payloadCodec)
-	}
+	outbound = append([]less.Middleware{channel.Recorder(channel.WriteEvent)}, outbound...)
 
 	th.pipelineFactory = channel.NewPipelineFactory(opts.onChannel, onChannelClosed, inbound, outbound, newRouter(opts.router), th.outboundHandler)
 	return th

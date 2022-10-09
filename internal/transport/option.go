@@ -48,6 +48,7 @@ var defaultTransOptions = &Options{
 			Ping:           &keepalive.Ping{},
 			Pong:           &keepalive.Pong{},
 			PingRecognizer: defaultPingRecognizer,
+			PongRecognizer: defaultPongRecognizer,
 		},
 		GoAwayParams: &keepalive.GoAwayParams{
 			GoAway:           &keepalive.GoAway{},

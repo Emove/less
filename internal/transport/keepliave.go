@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/emove/less"
@@ -31,18 +32,22 @@ func KeepaliveMiddleware(kgetter func(ch *channel.Channel) *keeper) less.Middlew
 				return handler(ctx, ch, message)
 			}
 			health := k.kp.HealthParams
-			if health.PingRecognizer(message) {
-				return ch.Write(health.Pong)
-			}
-			if health.PongRecognizer(message) {
-				// ignore
-				return nil
+			if health != nil {
+				if health.PingRecognizer != nil && health.PingRecognizer(message) {
+					return ch.Write(health.Pong)
+				}
+				if health.PongRecognizer != nil && health.PongRecognizer(message) {
+					atomic.StoreInt64(&k.lastPong, time.Now().UnixNano())
+					return nil
+				}
 			}
 
 			// go away
-			goAwayRecognizer := k.kp.GoAwayParams.GoAwayRecognizer
-			if goAwayRecognizer != nil && goAwayRecognizer(message) {
-				_ = ch.Close(context.Background(), errors.New("closing channel due to received a go away message"))
+			if k.kp.GoAwayParams != nil {
+				goAwayRecognizer := k.kp.GoAwayParams.GoAwayRecognizer
+				if goAwayRecognizer != nil && goAwayRecognizer(message) {
+					_ = ch.Close(context.Background(), errors.New("closing channel due to received a go away message"))
+				}
 			}
 
 			return handler(ctx, ch, message)
@@ -63,6 +68,7 @@ type keeper struct {
 	mu       sync.Mutex
 	done     int32
 	lastPing int64
+	lastPong int64
 }
 
 func (k *keeper) Keepalive() {
@@ -114,7 +120,7 @@ func (k *keeper) Keepalive() {
 
 	// time
 	healthParams := kp.HealthParams
-	if healthParams.Time > 0 {
+	if healthParams != nil && healthParams.Time > 0 {
 		var fn func()
 		fn = func() {
 			k.mu.Lock()
@@ -124,25 +130,26 @@ func (k *keeper) Keepalive() {
 			}
 			k.mu.Unlock()
 
-			lastRead := k.state.GetLastRead()
 			nowNano := time.Now().UnixNano()
-			if nowNano-lastRead < int64(healthParams.Time) {
-				timewheel.Timer.AfterFunc(healthParams.Time-time.Duration(nowNano-lastRead), fn)
+			internal := nowNano - k.state.GetLastRead()
+			if internal < int64(healthParams.Time) {
+				timewheel.Timer.AfterFunc(healthParams.Time-time.Duration(internal), fn)
 				return
 			}
 
 			ch := k.state.GetChannel()
-			if ch.Readable() && nowNano-lastRead >= int64(healthParams.Time) {
-				if k.lastPing > lastRead {
+			if ch.Readable() && internal >= int64(healthParams.Time) {
+				if k.lastPing > atomic.LoadInt64(&k.lastPong) {
 					// has sent ping before
-					if nowNano-k.lastPing >= int64(healthParams.Timeout) {
+					pingElapsed := nowNano - k.lastPing
+					if pingElapsed >= int64(healthParams.Timeout) {
 						// timeout
 						log.Debugf("closing channel due to ping timeout")
 						k.stopChannel(errors.New("closing channel due to ping timeout"))
 						return
 					}
 
-					timewheel.Timer.AfterFunc(healthParams.Timeout-time.Duration(nowNano-k.lastPing), fn)
+					timewheel.Timer.AfterFunc(healthParams.Timeout-time.Duration(pingElapsed), fn)
 					return
 				}
 
@@ -152,9 +159,9 @@ func (k *keeper) Keepalive() {
 					timewheel.Timer.AfterFunc(healthParams.Timeout, fn)
 					return
 				}
-				// go away channel or stop forcibly
+				// stop forcibly
 				log.Debugf("closing channel due to ping failed")
-				k.goAwayChannel(errors.New("closing channel due to pings failed"))
+				k.stopChannel(errors.New("closing channel due to pings failed"))
 			}
 		}
 		timewheel.Timer.AfterFunc(healthParams.Time, fn)
@@ -186,13 +193,17 @@ func (k *keeper) stopChannel(err error) {
 
 func (k *keeper) goAwayChannel(err error) {
 	ch := k.state.GetChannel()
-	if ch.Side() == channel.Server && k.kp.GoAwayParams.GoAway != nil {
-		if e := ch.Write(k.kp.GoAwayParams.GoAway); e != nil {
+	params := k.kp.GoAwayParams
+	if ch.Side() == channel.Server && params != nil && params.GoAway != nil {
+		if e := ch.Write(params.GoAway); e != nil {
 			log.Errorf("send channel goaway message err: %v", e)
 			// stop forcibly
 			k.stopChannel(err)
 		}
+		return
 	}
+	// client's channel or go away msg not supported
+	k.stopChannel(err)
 }
 
 func (k *keeper) sendPing() bool {
