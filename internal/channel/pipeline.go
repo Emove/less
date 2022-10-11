@@ -7,10 +7,12 @@ import (
 	"github.com/emove/less"
 )
 
+// PipelineFactory is a factory to create Pipeline.
 type PipelineFactory func(ch *Channel) *pipeline
 
 var pool = sync.Pool{}
 
+// NewPipelineFactory returns a pipeline factory.
 func NewPipelineFactory(
 	onChannel []less.OnChannel, onChannelClosed []less.OnChannelClosed,
 	inbound []less.Middleware, outbound []less.Middleware,

@@ -12,6 +12,7 @@ import (
 	"net"
 )
 
+// Server is a network server
 type Server struct {
 	addr string
 	ops  *inter_server.Options
@@ -19,16 +20,18 @@ type Server struct {
 	handler transport.TransHandler
 }
 
+// NewServer creates a less server
 func NewServer(addr string, op ...Option) *Server {
 	ops := inter_server.DefaultServerOptions
 
 	for _, o := range op {
-		o.Apply(ops)
+		o.apply(ops)
 	}
 
 	return &Server{addr: addr, ops: ops}
 }
 
+// Run listens transport address and serving for channel and message request
 func (srv *Server) Run() {
 
 	srv.addr = parseAddr(srv)
@@ -47,6 +50,7 @@ func (srv *Server) Run() {
 	}()
 }
 
+// Shutdown stops the Server, closes the transporter and all channels
 func (srv *Server) Shutdown() {
 	_ = srv.handler.Close(context.Background(), nil)
 	srv.ops.Transport.Close()
@@ -54,7 +58,7 @@ func (srv *Server) Shutdown() {
 }
 
 type Option interface {
-	Apply(*inter_server.Options)
+	apply(*inter_server.Options)
 }
 
 type serverOption struct {
@@ -67,16 +71,18 @@ func newOption(f func(ops *inter_server.Options)) Option {
 	}
 }
 
-func (fso *serverOption) Apply(so *inter_server.Options) {
+func (fso *serverOption) apply(so *inter_server.Options) {
 	fso.f(so)
 }
 
+// WithTransport sets transporter
 func WithTransport(transport trans.Transport) Option {
 	return newOption(func(ops *inter_server.Options) {
 		ops.Transport = transport
 	})
 }
 
+// WithOnChannel adds channel request hooks
 func WithOnChannel(onChannel ...OnChannel) Option {
 	return newOption(func(ops *inter_server.Options) {
 		if len(onChannel) > 0 {
@@ -85,6 +91,7 @@ func WithOnChannel(onChannel ...OnChannel) Option {
 	})
 }
 
+// WithOnChannelClosed adds channel closed hooks
 func WithOnChannelClosed(onChannelClosed ...OnChannelClosed) Option {
 	return newOption(func(ops *inter_server.Options) {
 		if len(onChannelClosed) > 0 {
@@ -93,18 +100,21 @@ func WithOnChannelClosed(onChannelClosed ...OnChannelClosed) Option {
 	})
 }
 
+// WithRouter sets message router
 func WithRouter(router router.Router) Option {
 	return newOption(func(ops *inter_server.Options) {
 		ops.TransOptions = append(ops.TransOptions, transport.WithRouter(router))
 	})
 }
 
+// KeepaliveParams sets keepalive parameters
 func KeepaliveParams(kp keepalive.KeepaliveParameters) Option {
 	return newOption(func(ops *inter_server.Options) {
 		ops.TransOptions = append(ops.TransOptions, transport.Keepalive(kp))
 	})
 }
 
+// WithInboundMiddleware adds inbound middlewares
 func WithInboundMiddleware(mws ...Middleware) Option {
 	return newOption(func(ops *inter_server.Options) {
 		if len(mws) > 0 {
@@ -113,6 +123,7 @@ func WithInboundMiddleware(mws ...Middleware) Option {
 	})
 }
 
+// WithOutboundMiddleware adds outbound middlewares
 func WithOutboundMiddleware(mws ...Middleware) Option {
 	return newOption(func(ops *inter_server.Options) {
 		if len(mws) > 0 {
@@ -121,30 +132,35 @@ func WithOutboundMiddleware(mws ...Middleware) Option {
 	})
 }
 
-func MaxConnectionSize(size uint32) Option {
+// MaxChannelSize sets the max size of channels
+func MaxChannelSize(size uint32) Option {
 	return newOption(func(ops *inter_server.Options) {
-		ops.TransOptions = append(ops.TransOptions, transport.WithMaxConnectionSize(size))
+		ops.TransOptions = append(ops.TransOptions, transport.WithMaxChannelSize(size))
 	})
 }
 
+// MaxSendMessageSize sets the max size of message when send
 func MaxSendMessageSize(size uint32) Option {
 	return newOption(func(ops *inter_server.Options) {
 		ops.TransOptions = append(ops.TransOptions, transport.WithMaxSendMessageSize(size))
 	})
 }
 
+// MaxReceiveMessageSize sets the max size of message when receive
 func MaxReceiveMessageSize(size uint32) Option {
 	return newOption(func(ops *inter_server.Options) {
 		ops.TransOptions = append(ops.TransOptions, transport.WithMaxReceiveMessageSize(size))
 	})
 }
 
+// DisableGoPool disables ants goroutine pool
 func DisableGoPool() Option {
 	return newOption(func(ops *inter_server.Options) {
 		ops.DisableGPool = true
 	})
 }
 
+// MaxGoPoolCapacity sets the max size of ants goroutine pool
 func MaxGoPoolCapacity(size int) Option {
 	return newOption(func(ops *inter_server.Options) {
 		_go.DefaultAntsPoolSize = size

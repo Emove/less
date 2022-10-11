@@ -16,9 +16,8 @@ type TCPOptions struct {
 }
 
 var DefaultOptions = &TCPOptions{
-	Network: "tcp",
-	// default connect timeout
-	Timeout:         time.Second * 5,
+	Network:         "tcp",
+	Timeout:         time.Second * 5, // default connect timeout
 	Keepalive:       true,
 	KeepAlivePeriod: time.Minute,
 	Linger:          -1,

@@ -32,6 +32,8 @@ var (
 	ErrChannelWriterClosed = errors.New("channel writer was closed")
 )
 
+var _ less.Channel = (*Channel)(nil)
+
 type Channel struct {
 	ctx   context.Context
 	conn  transport.Connection
@@ -87,7 +89,7 @@ func (ch *Channel) Write(msg interface{}) error {
 }
 
 func (ch *Channel) IsActive() bool {
-	return ch.conn.IsActive()
+	return !ch.calState(inactive) && ch.conn.IsActive()
 }
 
 func (ch *Channel) CloseReader() {
@@ -120,7 +122,7 @@ func (ch *Channel) Close(ctx context.Context, err error) error {
 		ch.tasks.WaitReadTask()
 		//log.Debugf("[channel] read tasks done")
 
-		// fire OnChannelClosed hook after inbound tasks finished
+		// fires OnChannelClosed hook after inbound tasks finished
 		// to avoid causing errors in case of customer holding that
 		// something like session about channel
 		ch.pl.FireOnChannelClosed(err)
@@ -223,7 +225,7 @@ func (ch *Channel) Side() int {
 	return ch.side
 }
 
-// Recorder returns a middleware to record channel state
+// Recorder returns a middleware to record channel tasks
 func Recorder(event int) less.Middleware {
 	return func(handler less.Handler) less.Handler {
 		return func(ctx context.Context, c less.Channel, message interface{}) error {
@@ -236,11 +238,11 @@ func Recorder(event int) less.Middleware {
 	}
 }
 
-func (ch *Channel) close(mod int32) {
+func (ch *Channel) close(state int32) {
 	for {
 		old := atomic.LoadInt32(&ch.state)
-		if old&mod == mod {
-			if atomic.CompareAndSwapInt32(&ch.state, old, old^mod) {
+		if old&state == state {
+			if atomic.CompareAndSwapInt32(&ch.state, old, old^state) {
 				return
 			}
 		} else {

@@ -18,7 +18,7 @@ import (
 type Option func(ops *Options)
 
 type Options struct {
-	maxConnectionSize     uint32
+	maxChannelSize        uint32
 	maxSendMessageSize    uint32
 	maxReceiveMessageSize uint32
 
@@ -38,7 +38,7 @@ type Options struct {
 }
 
 var defaultTransOptions = &Options{
-	maxConnectionSize:     math.MaxUint32,  // infinity
+	maxChannelSize:        math.MaxUint32,  // infinity
 	maxSendMessageSize:    1024 * 1024 * 4, // 4M
 	maxReceiveMessageSize: 1024 * 1024 * 4, // 4M
 	packetCodec:           packet.NewVariableLengthCodec(),
@@ -57,9 +57,9 @@ var defaultTransOptions = &Options{
 	},
 }
 
-func WithMaxConnectionSize(size uint32) Option {
+func WithMaxChannelSize(size uint32) Option {
 	return func(ops *Options) {
-		ops.maxConnectionSize = size
+		ops.maxChannelSize = size
 	}
 }
 

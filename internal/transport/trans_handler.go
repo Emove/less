@@ -115,7 +115,7 @@ func (th *transHandler) OnConnect(ctx context.Context, con transport.Connection)
 	log.Debugf("receive a connect request from: %s", con.RemoteAddr().String())
 
 	// check connection limit
-	if th.ops.maxConnectionSize > 0 && th.channelCount.Value() > int64(th.ops.maxConnectionSize) {
+	if th.ops.maxChannelSize > 0 && th.channelCount.Value() > int64(th.ops.maxChannelSize) {
 		log.Infof("new connect request was refused, concurrent channel nums: %d", th.channelCount.Value())
 		return ctx, errors.New("connection number out of limit")
 	}
