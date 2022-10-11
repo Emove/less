@@ -50,7 +50,7 @@ func (t *transport) Listen(addr string, driver trans.EventDriver) error {
 		if err != nil {
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
 				log.Errorf("tcp accept err: %v, retrying in 200 ms", err)
-				time.Sleep(200 * time.Second)
+				time.Sleep(200 * time.Millisecond)
 				err = nil
 			} else {
 				return err
