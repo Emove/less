@@ -27,8 +27,8 @@ func Test_delimiterCodec_Decode(t *testing.T) {
 		{
 			name:        "first",
 			times:       1,
-			codec:       NewDelimiterCodec("\n", 8),
-			args:        args{reader: ior.NewBufferReader(newTestReader([]byte("1234567\n"))), payloadCodec: payload.NewTextCodec()},
+			codec:       NewDelimiterCodec("00", 9),
+			args:        args{reader: ior.NewBufferReader(newTestReader([]byte("123456700"))), payloadCodec: payload.NewTextCodec()},
 			wantMessage: []string{"1234567"},
 			wantErr:     false,
 		},

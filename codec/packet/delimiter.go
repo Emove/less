@@ -77,16 +77,16 @@ func (dc *delimiterCodec) Decode(reader io.Reader, payloadCodec codec.PayloadCod
 
 	var peek []byte
 	length, found := 0, false
-	for length = dc.delimiterLength; length <= int(dc.maxLength) && !found; length += dc.delimiterLength {
+	for length = 1; length <= int(dc.maxLength) && !found; length++ {
 		peek, err = reader.Peek(length)
 		if err != nil {
 			return nil, err
 		}
-		if string(peek[length-dc.delimiterLength:]) == string(dc.delimiter) {
+		if len(peek) >= dc.delimiterLength && string(peek[length-dc.delimiterLength:]) == string(dc.delimiter) {
 			found = true
 		}
 	}
-	length -= dc.delimiterLength
+	length--
 
 	if !found {
 		return nil, ErrMsgSizeGreaterThanMaxLength
