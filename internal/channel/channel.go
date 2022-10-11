@@ -108,6 +108,15 @@ func (ch *Channel) Close(ctx context.Context, err error) error {
 	}
 	ch.close(inactive)
 
+	if err != nil {
+		ch.pl.FireOnChannelClosed(err)
+		close(ch.done)
+		_ = ch.conn.Close()
+		// reuse pipeline
+		ch.pl.Release()
+		return nil
+	}
+
 	// execute in a goroutine to avoid tasks WaitGroup deadlock
 	_go.Submit(func() {
 		defer func() {
