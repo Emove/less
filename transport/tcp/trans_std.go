@@ -3,11 +3,12 @@ package tcp
 import (
 	"context"
 	"fmt"
-	"github.com/emove/less/internal/errors"
-	"github.com/emove/less/log"
-	trans "github.com/emove/less/transport"
 	"net"
 	"time"
+
+	"github.com/emove/less/internal/utils/recovery"
+	"github.com/emove/less/log"
+	trans "github.com/emove/less/transport"
 )
 
 type transport struct {
@@ -114,16 +115,10 @@ func (t *transport) Close() {
 }
 
 func (t *transport) readLoop(ctx context.Context, conn trans.Connection, driver trans.EventDriver) {
-
-	var err error
-	defer func() {
-		if e := recover(); e != nil {
-			err = errors.AsError(e)
-		}
-
+	recovery.Recover(func(err error) {
 		// trigger onConnClosed event
 		driver.OnConnClosed(ctx, conn, err)
-	}()
+	})
 
 	for {
 		select {
