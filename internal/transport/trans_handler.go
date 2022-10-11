@@ -177,6 +177,7 @@ func (th *transHandler) OnRead(ch *channel.Channel, reader io.Reader) error {
 
 	if th.ops.maxReceiveMessageSize > 0 && uint32(reader.Length()) > th.ops.maxReceiveMessageSize {
 		log.Errorf("receive a message but message size greater than max-receive-message-size, message size: %d, max: %d", reader.Length(), th.ops.maxReceiveMessageSize)
+		return nil
 	}
 
 	_go.Submit(func() {
