@@ -3,11 +3,11 @@ package tcp
 import (
 	"context"
 	"fmt"
-	"net"
-
 	"github.com/emove/less/internal/errors"
 	"github.com/emove/less/log"
 	trans "github.com/emove/less/transport"
+	"net"
+	"time"
 )
 
 type transport struct {
@@ -44,10 +44,17 @@ func (t *transport) Listen(addr string, driver trans.EventDriver) error {
 
 	t.ctx, t.cancel = context.WithCancel(context.Background())
 
+	var con net.Conn
 	for {
-		con, err := listener.Accept()
+		con, err = listener.Accept()
 		if err != nil {
-			return err
+			if ne, ok := err.(net.Error); ok && ne.Temporary() {
+				log.Errorf("tcp accept err: %v, retrying in 200 ms", err)
+				time.Sleep(200 * time.Second)
+				err = nil
+			} else {
+				return err
+			}
 		}
 		tc := con.(*net.TCPConn)
 
