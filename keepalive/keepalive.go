@@ -15,9 +15,9 @@ type KeepaliveParameters struct {
 	// works in server side.
 	MaxChannelIdleTime time.Duration // the default value is infinity
 	// MaxChannelAge is a duration for the maximum amount of time a
-	// connection may exist before it will be closed by sending a GoAway. A
-	// random jitter of +/-10% will be added to MaxChannelAge to spread out
-	// connection storms.
+	// connection may exist before it will be closed by sending a GoAway.
+	// Inspired by grpc-go, A random jitter of +/-10% will be added to
+	// MaxChannelAge to spread out connection storms.
 	MaxChannelAge time.Duration // the default value is infinity
 	// CloseGrace is an additive period after which the channel will be forcibly closed.
 	CloseGrace   time.Duration // the default value is 10 seconds.

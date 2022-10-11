@@ -122,6 +122,7 @@ func Keepalive(kp keepalive.KeepaliveParameters) Option {
 
 		if kp.MaxChannelAge > 0 {
 			// add a jitter to MaxChannelAge.
+			// inspired by grpc-go. https://github.com/grpc/grpc-go/blob/master/internal/transport/http2_server.go#224
 			kp.MaxChannelAge += getJitter(kp.MaxChannelAge)
 		}
 
@@ -136,6 +137,7 @@ func Keepalive(kp keepalive.KeepaliveParameters) Option {
 			if healthParams.Ping == nil {
 				log.Warnf("Keepalive params has set Time but without Ping-Pong params so that channels those does not see any activity after a duration of Time will be closed forcibly")
 			} else {
+				// if healthParams.Ping equals keepalive.Ping, completing else configs
 				if _, ok := healthParams.Ping.(*keepalive.Ping); ok {
 					healthParams.Ping = msg.NewMessage(msg.Call, Ping)
 					healthParams.Pong = msg.NewMessage(msg.Reply, Pong)
