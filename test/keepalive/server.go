@@ -19,13 +19,13 @@ var ping = []byte("ping")
 var pong = []byte("pong")
 var goaway = []byte("go away")
 
-func newServer(kp *keepalive.KeepaliveParameters) *server.Server {
-	onChannelOption := server.WithOnChannel(ocIdentifier())
-	onChannelClosedOption := server.WithOnChannelClosed(deleteOnChannelClosed())
+func newServer(kp *keepalive.KeepaliveParameters) *less.Server {
+	onChannelOption := less.WithOnChannel(ocIdentifier())
+	onChannelClosedOption := less.WithOnChannelClosed(deleteOnChannelClosed())
 	if kp != nil {
-		return server.NewServer("localhost:9999", onChannelOption, onChannelClosedOption, server.WithRouter(newRouter()), server.KeepaliveParams(*kp))
+		return less.NewServer("localhost:9999", onChannelOption, onChannelClosedOption, less.WithRouter(newRouter()), less.KeepaliveParams(*kp))
 	}
-	return server.NewServer("localhost:9999", onChannelOption, onChannelClosedOption, server.WithRouter(newRouter()))
+	return less.NewServer("localhost:9999", onChannelOption, onChannelClosedOption, less.WithRouter(newRouter()))
 }
 
 var wg = &sync.WaitGroup{}
