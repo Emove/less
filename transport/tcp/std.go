@@ -52,6 +52,7 @@ func (c *connection) Writer() io.Writer {
 	return writer.NewBufferWriter(c.delegate)
 }
 
+// IsActive returns false when connection closed
 func (c *connection) IsActive() bool {
 	return atomic.LoadInt32(&c.closed) == trans.Active
 }

@@ -141,7 +141,7 @@ func (w *writer) checkWriteable(n int) bool {
 	if len(w.buff)-w.writeIndex >= n {
 		return true
 	}
-	// buffer not enough
+	// buffer space not enough
 	if !w.growable {
 		return false
 	}
