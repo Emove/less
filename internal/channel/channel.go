@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/emove/less"
+	"github.com/emove/less/log"
 	"github.com/emove/less/pkg/io"
 	_go "github.com/emove/less/pkg/pool/go"
 	"github.com/emove/less/transport"
@@ -108,15 +109,6 @@ func (ch *Channel) Close(ctx context.Context, err error) error {
 	}
 	ch.close(inactive)
 
-	if err != nil {
-		ch.pl.FireOnChannelClosed(err)
-		close(ch.done)
-		_ = ch.conn.Close()
-		// reuse pipeline
-		ch.pl.Release()
-		return nil
-	}
-
 	// execute in a goroutine to avoid tasks WaitGroup deadlock
 	_go.Submit(func() {
 		defer func() {
@@ -135,6 +127,11 @@ func (ch *Channel) Close(ctx context.Context, err error) error {
 		// to avoid causing errors in case of customer holding that
 		// something like session about channel
 		ch.pl.FireOnChannelClosed(err)
+
+		if err != nil {
+			log.Infof("channel closed due to error: %v", err)
+			return
+		}
 
 		done := make(chan struct{})
 		_go.Submit(func() {
