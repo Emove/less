@@ -20,6 +20,7 @@ type Connection interface {
 	// Writer returns a Writer.
 	Writer() io.Writer
 
+	// IsActive returns false only when Connection closed.
 	IsActive() bool
 
 	// Close closes the connection.

@@ -220,7 +220,7 @@ func Test_connection_Writer(t *testing.T) {
 				t.Errorf("client write 'hello ' error: %s", err.Error())
 				return
 			}
-			malloc := writer.Malloc(6)
+			malloc, _ := writer.Malloc(6)
 			copy(malloc, content[6:])
 
 			if writer.MallocLength() != len(content) {

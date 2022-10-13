@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
-	"github.com/emove/less/internal/errors"
+	"github.com/emove/less/internal/utils/recovery"
 	"github.com/emove/less/log"
 	trans "github.com/emove/less/transport"
 )
@@ -44,10 +45,17 @@ func (t *transport) Listen(addr string, driver trans.EventDriver) error {
 
 	t.ctx, t.cancel = context.WithCancel(context.Background())
 
+	var con net.Conn
 	for {
-		con, err := listener.Accept()
+		con, err = listener.Accept()
 		if err != nil {
-			return err
+			if ne, ok := err.(net.Error); ok && ne.Temporary() {
+				log.Errorf("tcp accept err: %v, retrying in 200 ms", err)
+				time.Sleep(200 * time.Millisecond)
+				err = nil
+			} else {
+				return err
+			}
 		}
 		tc := con.(*net.TCPConn)
 
@@ -107,16 +115,10 @@ func (t *transport) Close() {
 }
 
 func (t *transport) readLoop(ctx context.Context, conn trans.Connection, driver trans.EventDriver) {
-
-	var err error
-	defer func() {
-		if e := recover(); e != nil {
-			err = errors.AsError(e)
-		}
-
+	recovery.Recover(func(err error) {
 		// trigger onConnClosed event
 		driver.OnConnClosed(ctx, conn, err)
-	}()
+	})
 
 	for {
 		select {

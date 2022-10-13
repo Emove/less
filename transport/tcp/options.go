@@ -1,8 +1,10 @@
 package tcp
 
 import (
-	trans "github.com/emove/less/transport"
 	"time"
+
+	"github.com/emove/less/log"
+	trans "github.com/emove/less/transport"
 )
 
 type TCPOptions struct {
@@ -15,26 +17,38 @@ type TCPOptions struct {
 }
 
 var DefaultOptions = &TCPOptions{
-	Network: "tcp",
-	// default connect timeout
-	Timeout:         time.Second * 5,
+	Network:         "tcp",
+	Timeout:         time.Second * 5, // default connect timeout
 	Keepalive:       true,
 	KeepAlivePeriod: time.Minute,
 	Linger:          -1,
 	NoDelay:         true,
 }
 
-func WithNetwork(network string) trans.Option {
+type Network string
+
+const (
+	TCP  = "tcp"
+	TCP4 = "tcp4"
+	TCP6 = "tcp6"
+)
+
+// WithNetwork sets tcp network, TCP, TCP4, TCP6 is allowed
+func WithNetwork(network Network) trans.Option {
 	return func(ops trans.Options) {
 		if tcpOps, ok := ops.(TCPOptions); ok {
 			switch network {
-			case "tcp", "tcp4", "tcp6":
-				tcpOps.Network = network
+			case TCP, TCP4, TCP6:
+				tcpOps.Network = string(network)
+			default:
+				tcpOps.Network = TCP
+				log.Warnf("network %s not supported, apply tcp by default", network)
 			}
 		}
 	}
 }
 
+// WithTimeout sets dial timeout, only works in client
 func WithTimeout(d time.Duration) trans.Option {
 	return func(ops trans.Options) {
 		if tcpOps, ok := ops.(TCPOptions); ok {
@@ -43,6 +57,7 @@ func WithTimeout(d time.Duration) trans.Option {
 	}
 }
 
+// WithKeepalive sets tcp keepalive
 func WithKeepalive(keepalive bool) trans.Option {
 	return func(ops trans.Options) {
 		if tcpOps, ok := ops.(TCPOptions); ok {
@@ -51,6 +66,7 @@ func WithKeepalive(keepalive bool) trans.Option {
 	}
 }
 
+// WithKeepalivePeriod sets tcp keepalive period
 func WithKeepalivePeriod(period time.Duration) trans.Option {
 	return func(ops trans.Options) {
 		if tcpOps, ok := ops.(TCPOptions); ok {
@@ -59,6 +75,7 @@ func WithKeepalivePeriod(period time.Duration) trans.Option {
 	}
 }
 
+// WithLinger sets tcp linger
 func WithLinger(linger int) trans.Option {
 	return func(ops trans.Options) {
 		if tcpOps, ok := ops.(TCPOptions); ok {
@@ -67,6 +84,7 @@ func WithLinger(linger int) trans.Option {
 	}
 }
 
+// WithNoDelay sets tcp no delay
 func WithNoDelay(delay bool) trans.Option {
 	return func(ops trans.Options) {
 		if tcpOps, ok := ops.(TCPOptions); ok {

@@ -1,4 +1,4 @@
-package server
+package less
 
 import (
 	"context"
@@ -9,9 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/emove/less"
 	"github.com/emove/less/log"
-	"github.com/emove/less/pkg/router"
+	"github.com/emove/less/router"
 )
 
 func newServer() *Server {
@@ -82,8 +81,8 @@ func mockClient(t *testing.T) {
 	_ = con.Close()
 }
 
-func ocAddressChecker() less.OnChannel {
-	return func(ctx context.Context, ch less.Channel) (context.Context, error) {
+func ocAddressChecker() OnChannel {
+	return func(ctx context.Context, ch Channel) (context.Context, error) {
 		addr, _, err := net.SplitHostPort(ch.RemoteAddr().String())
 		if err != nil {
 			return ctx, err
@@ -103,11 +102,11 @@ type ctxIdentifierKey struct{}
 
 type IdentifierChannel struct {
 	id uint32
-	ch less.Channel
+	ch Channel
 }
 
-func ocIdentifier() less.OnChannel {
-	return func(ctx context.Context, ch less.Channel) (context.Context, error) {
+func ocIdentifier() OnChannel {
+	return func(ctx context.Context, ch Channel) (context.Context, error) {
 		IDGenerator++
 		ich := &IdentifierChannel{id: IDGenerator, ch: ch}
 		channels[IDGenerator] = ich
@@ -117,8 +116,8 @@ func ocIdentifier() less.OnChannel {
 
 var channels = make(map[uint32]*IdentifierChannel)
 
-func deleteOnChannelClosed() less.OnChannelClosed {
-	return func(ctx context.Context, ch less.Channel, err error) {
+func deleteOnChannelClosed() OnChannelClosed {
+	return func(ctx context.Context, ch Channel, err error) {
 		if ich := ctx.Value(ctxIdentifierKey{}); ich != nil {
 			if c, ok := ich.(*IdentifierChannel); ok {
 				log.Infof("channel closed, id: %d, err: %v\n", c.id, err)
@@ -128,9 +127,9 @@ func deleteOnChannelClosed() less.OnChannelClosed {
 	}
 }
 
-func newInboundMiddleware() less.Middleware {
-	return func(handler less.Handler) less.Handler {
-		return func(ctx context.Context, ch less.Channel, message interface{}) error {
+func newInboundMiddleware() Middleware {
+	return func(handler Handler) Handler {
+		return func(ctx context.Context, ch Channel, message interface{}) error {
 			log.Infof("inbound before")
 			err := handler(ctx, ch, message)
 			log.Infof("inbound after")
@@ -139,9 +138,9 @@ func newInboundMiddleware() less.Middleware {
 	}
 }
 
-func newOutboundMiddleware() less.Middleware {
-	return func(handler less.Handler) less.Handler {
-		return func(ctx context.Context, ch less.Channel, message interface{}) error {
+func newOutboundMiddleware() Middleware {
+	return func(handler Handler) Handler {
+		return func(ctx context.Context, ch Channel, message interface{}) error {
 			log.Infof("outbound before")
 			err := handler(ctx, ch, message)
 			log.Infof("outbound after")
@@ -151,9 +150,9 @@ func newOutboundMiddleware() less.Middleware {
 }
 
 func newRouter() router.Router {
-	return func(ctx context.Context, channel less.Channel, msg interface{}) (less.Handler, error) {
+	return func(ctx context.Context, channel Channel, msg interface{}) (Handler, error) {
 		once := sync.Once{}
-		return func(ctx context.Context, ch less.Channel, message interface{}) error {
+		return func(ctx context.Context, ch Channel, message interface{}) error {
 			ich := ctx.Value(ctxIdentifierKey{}).(*IdentifierChannel)
 			log.Infof("channel id: %d, message: %v", ich.id, message)
 			once.Do(func() {

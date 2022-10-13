@@ -2,13 +2,14 @@ package tcp
 
 import (
 	"context"
+	"net"
+	"sync/atomic"
+	"time"
+
 	"github.com/emove/less/pkg/io"
 	"github.com/emove/less/pkg/io/reader"
 	"github.com/emove/less/pkg/io/writer"
 	trans "github.com/emove/less/transport"
-	"net"
-	"sync/atomic"
-	"time"
 )
 
 // WrapConnection wraps net.Conn to conn.Connection
@@ -51,6 +52,7 @@ func (c *connection) Writer() io.Writer {
 	return writer.NewBufferWriter(c.delegate)
 }
 
+// IsActive returns false when connection closed
 func (c *connection) IsActive() bool {
 	return atomic.LoadInt32(&c.closed) == trans.Active
 }
