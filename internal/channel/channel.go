@@ -22,11 +22,6 @@ const (
 	readWriteMode
 )
 
-const (
-	Client = 1
-	Server = 2
-)
-
 var (
 	ErrChannelClosed       = errors.New("channel already closed")
 	ErrChannelReaderClosed = errors.New("channel reader was closed")
@@ -101,6 +96,14 @@ func (ch *Channel) CloseWriter() {
 	ch.close(writeable)
 }
 
+func (ch *Channel) Readable() bool {
+	return ch.calState(readable)
+}
+
+func (ch *Channel) Writeable() bool {
+	return ch.calState(writeable)
+}
+
 func (ch *Channel) Close(ctx context.Context, err error) error {
 
 	old := atomic.LoadInt32(&ch.state)
@@ -129,7 +132,7 @@ func (ch *Channel) Close(ctx context.Context, err error) error {
 		ch.pl.FireOnChannelClosed(err)
 
 		if err != nil {
-			log.Infof("channel closed due to error: %v", err)
+			log.Debugf("channel closed due to error: %v", err)
 			return
 		}
 
@@ -200,24 +203,23 @@ func (ch *Channel) Reader() (io.Reader, error) {
 	return ch.conn.Reader(), nil
 }
 
-func (ch *Channel) Writer() io.Writer {
-	return ch.conn.Writer()
+func (ch *Channel) Writer() (io.Writer, error) {
+	if !ch.calState(readable) {
+		return nil, ErrChannelWriterClosed
+	}
+	return ch.conn.Writer(), nil
 }
 
 func (ch *Channel) SetContext(ctx context.Context) {
 	ch.ctx = ctx
 }
 
-func (ch *Channel) GetPipeline() *pipeline {
-	return ch.pl
+func (ch *Channel) Activate(ctx context.Context) error {
+	return ch.pl.FireOnChannel(ctx)
 }
 
-func (ch *Channel) Readable() bool {
-	return ch.calState(readable)
-}
-
-func (ch *Channel) Writeable() bool {
-	return ch.calState(writeable)
+func (ch *Channel) TriggerInbound(msg interface{}) error {
+	return ch.pl.FireInbound(msg)
 }
 
 func (ch *Channel) WriteDirectly(msg interface{}) error {

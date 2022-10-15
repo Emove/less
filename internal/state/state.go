@@ -1,11 +1,15 @@
-package channel
+package state
 
-import "time"
+import (
+	"time"
+
+	"github.com/emove/less/internal/channel"
+)
 
 // Stater is a abstraction to get channel states
 type Stater interface {
 	// GetChannel returns channel
-	GetChannel() *Channel
+	GetChannel() *channel.Channel
 	// GetIdleTime returns channel's idle time
 	GetIdleTime() time.Time
 	// GetLastRead returns channel last read timestamp

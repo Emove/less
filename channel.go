@@ -35,8 +35,14 @@ type Channel interface {
 	// CloseReader closes the channel reader then the channel is unable to receive any message.
 	CloseReader()
 
-	// CloseWriter closed the channel writer then the channel is unable to send any message.
+	// CloseWriter close the channel writer then the channel is unable to send any message.
 	CloseWriter()
+
+	// Readable returns the channel readable or not
+	Readable() bool
+
+	// Writeable returns the channel writeable or not
+	Writeable() bool
 
 	// AddOnChannelClosed adds OnChannelClosed hooks for this channel.
 	AddOnChannelClosed(onChannelClosed ...OnChannelClosed)
