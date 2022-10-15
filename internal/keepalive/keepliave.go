@@ -281,7 +281,7 @@ func (k *Keeper) goAwayChannel(err error) {
 			// stop forcibly
 			k.stopChannel(err)
 		}
-		log.Infof("channel will be closed by peer because of error: %v", err)
+		log.Infow("msg", "channel will be closed by peer", "error", err)
 		return
 	}
 	// client's channel or go away msg not supported

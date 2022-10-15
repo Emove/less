@@ -132,7 +132,7 @@ func (ch *Channel) Close(ctx context.Context, err error) error {
 		ch.pl.FireOnChannelClosed(err)
 
 		if err != nil {
-			log.Debugf("channel closed due to error: %v", err)
+			log.Debugw("msg", "channel closed", "error", err)
 			return
 		}
 
