@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/emove/less/server"
 	"net"
 	"sync"
 	"time"
@@ -19,13 +20,13 @@ var ping = []byte("ping")
 var pong = []byte("pong")
 var goaway = []byte("go away")
 
-func newServer(kp *keepalive.KeepaliveParameters) *less.Server {
-	onChannelOption := less.WithOnChannel(ocIdentifier())
-	onChannelClosedOption := less.WithOnChannelClosed(deleteOnChannelClosed())
+func newServer(kp *keepalive.KeepaliveParameters) *server.Server {
+	onChannelOption := server.WithOnChannel(ocIdentifier())
+	onChannelClosedOption := server.WithOnChannelClosed(deleteOnChannelClosed())
 	if kp != nil {
-		return less.NewServer("localhost:9999", onChannelOption, onChannelClosedOption, less.WithRouter(newRouter()), less.KeepaliveParams(*kp))
+		return server.NewServer("localhost", onChannelOption, onChannelClosedOption, server.WithRouter(newRouter()), server.KeepaliveParams(*kp))
 	}
-	return less.NewServer("localhost:9999", onChannelOption, onChannelClosedOption, less.WithRouter(newRouter()))
+	return server.NewServer("localhost", onChannelOption, onChannelClosedOption, server.WithRouter(newRouter()))
 }
 
 var wg = &sync.WaitGroup{}
@@ -49,7 +50,7 @@ func KeepaliveServer(kp *keepalive.KeepaliveParameters) {
 
 	var c *fake_client.Client
 	var cc net.Conn
-	c = fake_client.NewClient("tcp", "localhost:9999", fake_client.ConnectSuccess(func(conn net.Conn) {
+	c = fake_client.NewClient("tcp", "localhost:8888", fake_client.ConnectSuccess(func(conn net.Conn) {
 		cc = conn
 	}), fake_client.OnMessage(func(conn net.Conn, msg []byte) error {
 

@@ -31,9 +31,10 @@ func TestKeepaliveServer_health(t *testing.T) {
 	kp := &keepalive.KeepaliveParameters{
 		HealthParams: &keepalive.HealthParams{
 			Time:    3 * time.Second,
-			Timeout: 1 * time.Second,
-			Ping:    ping,
-			Pong:    pong,
+			Timeout: 2 * time.Second,
+			//Timeout: 1 * time.Second,
+			Ping: ping,
+			Pong: pong,
 			PingRecognizer: func(message interface{}) bool {
 				content, ok := message.(string)
 				return ok && content == "ping"

@@ -14,7 +14,7 @@ var (
 )
 
 var (
-	defaultLogger, _ = With(NewStdLogger(log.Writer()), "ts", DefaultTimestamp)
+	defaultLogger, _ = With(NewStdLogger(log.Writer()), "ts", DefaultTimestamp, "caller", DefaultCaller)
 	DefaultMsgKey    = "msg"
 )
 

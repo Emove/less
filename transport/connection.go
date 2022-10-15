@@ -1,8 +1,9 @@
 package transport
 
 import (
-	"github.com/emove/less/pkg/io"
 	"net"
+
+	"github.com/emove/less/pkg/io"
 )
 
 const (

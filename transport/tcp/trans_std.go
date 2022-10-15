@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/emove/less/internal/utils/recovery"
+	"github.com/emove/less/internal/recovery"
 	"github.com/emove/less/log"
 	trans "github.com/emove/less/transport"
 )

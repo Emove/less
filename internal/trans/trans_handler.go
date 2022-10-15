@@ -1,4 +1,4 @@
-package transport
+package trans
 
 import (
 	"context"
@@ -8,10 +8,11 @@ import (
 	"sync/atomic"
 
 	"github.com/emove/less"
+	less_atomic "github.com/emove/less/internal/atomic"
 	"github.com/emove/less/internal/channel"
+	"github.com/emove/less/internal/keepalive"
 	"github.com/emove/less/internal/msg"
-	less_atomic "github.com/emove/less/internal/utils/atomic"
-	"github.com/emove/less/internal/utils/recovery"
+	"github.com/emove/less/internal/recovery"
 	"github.com/emove/less/log"
 	"github.com/emove/less/pkg/io"
 	_go "github.com/emove/less/pkg/pool/go"
@@ -29,7 +30,7 @@ type ctxChannelKey struct{}
 type TransHandler interface {
 	transport.EventDriver
 	BoundHandler
-	GracefulCloser
+	transport.GracefulCloser
 }
 
 func NewTransHandler(ops ...Option) TransHandler {
@@ -47,6 +48,8 @@ func NewTransHandler(ops ...Option) TransHandler {
 		th.closeChannel(ctx, ch.(*channel.Channel), err)
 	}}, th.ops.onChannelClosed...)
 
+	keepalive.ConsummateKeepaliveParams(opts.kp)
+
 	if opts.useLessMsgCodec {
 		opts.payloadCodec = msg.NewLessMsgPayloadCodec(opts.payloadCodec)
 	}
@@ -56,14 +59,14 @@ func NewTransHandler(ops ...Option) TransHandler {
 
 	healthParams := th.ops.kp.HealthParams
 	if healthParams != nil && healthParams.Time > 0 {
-		kgetter := func(ch *channel.Channel) *keeper {
+		kgetter := func(ch *channel.Channel) *keepalive.Keeper {
 			val, ok := th.channels.Load(ch)
 			if !ok {
 				return nil
 			}
-			return val.(*keeper)
+			return val.(*keepalive.Keeper)
 		}
-		inbound = append([]less.Middleware{KeepaliveMiddleware(kgetter), channel.Recorder(channel.ReadEvent)}, inbound...)
+		inbound = append([]less.Middleware{keepalive.KeepaliveMiddleware(kgetter), channel.Recorder(channel.ReadEvent)}, inbound...)
 	} else {
 		inbound = append([]less.Middleware{channel.Recorder(channel.ReadEvent)}, inbound...)
 	}
@@ -71,6 +74,10 @@ func NewTransHandler(ops ...Option) TransHandler {
 	outbound = append([]less.Middleware{channel.Recorder(channel.WriteEvent)}, outbound...)
 
 	th.pipelineFactory = channel.NewPipelineFactory(opts.onChannel, onChannelClosed, inbound, outbound, newRouter(opts.router), th.outboundHandler)
+
+	log.Infow("max-channel-size", opts.maxChannelSize, "max-send-message-size", opts.maxSendMessageSize, "max-receive-message-size", opts.maxReceiveMessageSize)
+	log.Infow("packet-codec", opts.packetCodec.Name(), "payload-codec", opts.payloadCodec.Name())
+
 	return th
 }
 
@@ -83,7 +90,7 @@ const (
 
 type transHandler struct {
 	state           int32
-	ops             *Options
+	ops             *options
 	side            int
 	channels        sync.Map
 	channelCount    less_atomic.AtomicInt64
@@ -122,7 +129,7 @@ func (th *transHandler) OnConnect(ctx context.Context, con transport.Connection)
 
 	ch = channel.NewChannel(con, th.side, th.pipelineFactory)
 
-	if err = ch.GetPipeline().FireOnChannel(ctx); err != nil {
+	if err = ch.Activate(ctx); err != nil {
 		log.Debugf("connect request from: %s failed, err: %v", con.RemoteAddr().String(), err)
 		return ctx, err
 	}
@@ -181,7 +188,7 @@ func (th *transHandler) OnRead(ch *channel.Channel, reader io.Reader) error {
 	}
 
 	_go.Submit(func() {
-		if err = ch.GetPipeline().FireInbound(msg); err != nil {
+		if err = ch.TriggerInbound(msg); err != nil {
 			log.Errorw("remote", ch.RemoteAddr(), log.DefaultMsgKey, msg, "err", err)
 		}
 	})
@@ -266,7 +273,10 @@ func (th *transHandler) isActive() bool {
 }
 
 func (th *transHandler) outboundHandler(_ context.Context, ch less.Channel, message interface{}) error {
-	w := ch.(*channel.Channel).Writer()
+	w, err := ch.(*channel.Channel).Writer()
+	if err != nil {
+		return err
+	}
 	defer w.Release()
 	return th.OnWrite(ch.(*channel.Channel), w, message)
 }
@@ -278,7 +288,7 @@ func (th *transHandler) prepareKeepalive(ch *channel.Channel) interface{} {
 		kp.MaxChannelAge > 0 ||
 		kp.HealthParams.Time > 0 {
 
-		k := NewKeeper(kp, ch)
+		k := keepalive.NewKeeper(kp, ch)
 		k.Keepalive()
 		return k
 	}
