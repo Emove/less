@@ -25,7 +25,7 @@ Less is a ***light-weight*** and ***strong-extensibility*** network framework fo
 - Provides common codec and supports customize message codec
 - Pipelined Middleware
 - flexible Router design
-- Provides Non-Copy API for codec
+- Provides Non-Copy API for reading and writing
 - Provides standard Logger interface
 - Integrates keepalive implementation
 
