@@ -8,12 +8,12 @@ import (
 
 // Stater is a abstraction to get channel states
 type Stater interface {
-	// GetChannel returns channel
-	GetChannel() *channel.Channel
-	// GetIdleTime returns channel's idle time
-	GetIdleTime() time.Time
-	// GetLastRead returns channel last read timestamp
-	GetLastRead() int64
-	// GetLastWrite returns channel last write timestamp
-	GetLastWrite() int64
+	// Channel returns channel
+	Channel() *channel.Channel
+	// IdleTime returns channel's idle time
+	IdleTime() time.Time
+	// LastRead returns channel last read timestamp
+	LastRead() int64
+	// LastWrite returns channel last write timestamp
+	LastWrite() int64
 }

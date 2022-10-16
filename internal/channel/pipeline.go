@@ -120,6 +120,10 @@ func (pl *pipeline) FireOutbound(message interface{}) error {
 	return mws(handler)(ch.Context(), ch, message)
 }
 
+func (pl *pipeline) Outbound(message interface{}) error {
+	return pl.outboundHandler(pl.ch.ctx, pl.ch, message)
+}
+
 // Release releases channel's specific hooks and reuse pipeline
 func (pl *pipeline) Release() {
 	pl.ch = nil

@@ -6,8 +6,8 @@ import (
 	"github.com/emove/less"
 )
 
-// KeepaliveParameters is used to config channel keepalive and max-age parameters
-type KeepaliveParameters struct {
+// ServerParameters is used to config channel keepalive and max-age parameters
+type ServerParameters struct {
 	// MaxChannelIdleTime is a duration for the amount of time after which an
 	// idle connection would be closed by sending a GoAway. Idleness duration is
 	// defined since the most recent time the number of outstanding read or write

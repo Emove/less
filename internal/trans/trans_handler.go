@@ -111,7 +111,7 @@ func (th *transHandler) OnConnect(ctx context.Context, con transport.Connection)
 		})
 		closingCtx := context.Background()
 		if !th.isActive() {
-			err = errors.New("transport was closed")
+			err = errors.New("transport has been closed")
 			closingCtx = th.closingCtx
 		}
 		if err != nil && ch != nil {

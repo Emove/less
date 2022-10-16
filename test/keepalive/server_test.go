@@ -13,14 +13,14 @@ func TestKeepaliveServer_Empty(t *testing.T) {
 }
 
 func TestKeepaliveServer_IdleTime(t *testing.T) {
-	kp := &keepalive.KeepaliveParameters{
+	kp := &keepalive.ServerParameters{
 		MaxChannelIdleTime: 3 * time.Second,
 	}
 	KeepaliveServer(kp)
 }
 
 func TestKeepaliveServer_MaxChannelAge(t *testing.T) {
-	kp := &keepalive.KeepaliveParameters{
+	kp := &keepalive.ServerParameters{
 		MaxChannelAge: 10 * time.Second,
 		CloseGrace:    1 * time.Second,
 	}
@@ -28,7 +28,7 @@ func TestKeepaliveServer_MaxChannelAge(t *testing.T) {
 }
 
 func TestKeepaliveServer_health(t *testing.T) {
-	kp := &keepalive.KeepaliveParameters{
+	kp := &keepalive.ServerParameters{
 		HealthParams: &keepalive.HealthParams{
 			Time:    3 * time.Second,
 			Timeout: 2 * time.Second,
@@ -49,9 +49,9 @@ func TestKeepaliveServer_health(t *testing.T) {
 }
 
 func TestKeepaliveServer_GoAway(t *testing.T) {
-	kp := &keepalive.KeepaliveParameters{
-		//MaxChannelIdleTime: 3 * time.Second,
-		MaxChannelAge: 10 * time.Second,
+	kp := &keepalive.ServerParameters{
+		MaxChannelIdleTime: 3 * time.Second,
+		//MaxChannelAge: 10 * time.Second,
 		GoAwayParams: &keepalive.GoAwayParams{
 			GoAway: goaway,
 			GoAwayRecognizer: func(message interface{}) bool {

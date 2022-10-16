@@ -20,7 +20,7 @@ var ping = []byte("ping")
 var pong = []byte("pong")
 var goaway = []byte("go away")
 
-func newServer(kp *keepalive.KeepaliveParameters) *server.Server {
+func newServer(kp *keepalive.ServerParameters) *server.Server {
 	onChannelOption := server.WithOnChannel(ocIdentifier())
 	onChannelClosedOption := server.WithOnChannelClosed(deleteOnChannelClosed())
 	if kp != nil {
@@ -31,7 +31,7 @@ func newServer(kp *keepalive.KeepaliveParameters) *server.Server {
 
 var wg = &sync.WaitGroup{}
 
-func KeepaliveServer(kp *keepalive.KeepaliveParameters) {
+func KeepaliveServer(kp *keepalive.ServerParameters) {
 	server := newServer(kp)
 
 	server.Run()
@@ -78,7 +78,8 @@ func KeepaliveServer(kp *keepalive.KeepaliveParameters) {
 	}()
 
 	wg.Wait()
-	server.Shutdown()
+	//server.Shutdown()
+	select {}
 }
 
 var IDGenerator uint32

@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 	"sync/atomic"
-	"time"
 
 	"github.com/emove/less/pkg/io"
 	"github.com/emove/less/pkg/io/reader"
@@ -30,8 +29,7 @@ type connection struct {
 	cancelFunc context.CancelFunc
 	delegate   net.Conn
 
-	closed      int32
-	readTimeout time.Duration
+	closed int32
 }
 
 func (c *connection) Read(buf []byte) (n int, err error) {
