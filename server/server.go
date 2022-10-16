@@ -111,7 +111,7 @@ func WithRouter(router router.Router) ServerOption {
 }
 
 // KeepaliveParams sets keepalive parameters
-func KeepaliveParams(kp keepalive.KeepaliveParameters) ServerOption {
+func KeepaliveParams(kp keepalive.ServerParameters) ServerOption {
 	return func(ops *serverOptions) {
 		ops.transOptions = append(ops.transOptions, trans.Keepalive(kp))
 	}

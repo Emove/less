@@ -23,30 +23,25 @@ const (
 )
 
 var (
-	ErrChannelClosed       = errors.New("channel already closed")
-	ErrChannelReaderClosed = errors.New("channel reader was closed")
-	ErrChannelWriterClosed = errors.New("channel writer was closed")
+	ErrChannelClosed       = errors.New("channel has been closed")
+	ErrChannelReaderClosed = errors.New("channel reader has been closed")
+	ErrChannelWriterClosed = errors.New("channel writer has been closed")
 )
 
 var _ less.Channel = (*Channel)(nil)
 
 type Channel struct {
-	ctx   context.Context
-	conn  transport.Connection
-	state int32
-	done  chan struct{}
-	pl    *pipeline
-	tasks *WaitGroup
-
-	// represents client's channel or server's channel
-	side int
-
+	ctx       context.Context
+	conn      transport.Connection
+	state     int32
+	done      chan struct{}
+	pl        *pipeline
+	tasks     *WaitGroup
+	side      int // represents client's channel or server's channel
 	lastRead  int64
 	lastWrite int64
-	// guard the following
-	mu sync.Mutex
-	// records channel idle time
-	idle time.Time
+	mu        sync.Mutex // guard the following
+	idle      time.Time  // records channel idle time
 }
 
 func NewChannel(con transport.Connection, side int, factory PipelineFactory) *Channel {
@@ -85,7 +80,7 @@ func (ch *Channel) Write(msg interface{}) error {
 }
 
 func (ch *Channel) IsActive() bool {
-	return !ch.calState(inactive) && ch.conn.IsActive()
+	return atomic.LoadInt32(&ch.state)&readWriteMode != 0 && ch.conn.IsActive()
 }
 
 func (ch *Channel) CloseReader() {
@@ -176,21 +171,21 @@ func (ch *Channel) AddOutboundMiddleware(mw ...less.Middleware) {
 
 // ====================================== implements stater ============================================ //
 
-func (ch *Channel) GetChannel() *Channel {
+func (ch *Channel) Channel() *Channel {
 	return ch
 }
 
-func (ch *Channel) GetIdleTime() time.Time {
+func (ch *Channel) IdleTime() time.Time {
 	ch.mu.Lock()
 	defer ch.mu.Unlock()
 	return ch.idle
 }
 
-func (ch *Channel) GetLastRead() int64 {
+func (ch *Channel) LastRead() int64 {
 	return atomic.LoadInt64(&ch.lastRead)
 }
 
-func (ch *Channel) GetLastWrite() int64 {
+func (ch *Channel) LastWrite() int64 {
 	return atomic.LoadInt64(&ch.lastWrite)
 }
 
@@ -215,7 +210,9 @@ func (ch *Channel) SetContext(ctx context.Context) {
 }
 
 func (ch *Channel) Activate(ctx context.Context) error {
-	return ch.pl.FireOnChannel(ctx)
+	err := ch.pl.FireOnChannel(ctx)
+	log.Infof("new channel active from: %s", ch.conn.RemoteAddr().String())
+	return err
 }
 
 func (ch *Channel) TriggerInbound(msg interface{}) error {
@@ -223,10 +220,7 @@ func (ch *Channel) TriggerInbound(msg interface{}) error {
 }
 
 func (ch *Channel) WriteDirectly(msg interface{}) error {
-	if ch.calState(writeable) {
-		return ch.pl.FireOutbound(msg)
-	}
-	return ErrChannelWriterClosed
+	return ch.pl.Outbound(msg)
 }
 
 func (ch *Channel) Side() int {

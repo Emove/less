@@ -24,7 +24,7 @@ type options struct {
 	router                router.Router
 	inbound               []less.Middleware
 	outbound              []less.Middleware
-	kp                    *keepalive.KeepaliveParameters
+	kp                    *keepalive.ServerParameters
 	useLessMsgCodec       bool
 }
 
@@ -34,7 +34,7 @@ var defaultTransOptions = &options{
 	maxReceiveMessageSize: 1024 * 1024 * 4, // 4M
 	packetCodec:           packet.NewVariableLengthCodec(),
 	payloadCodec:          payload.NewTextCodec(),
-	kp: &keepalive.KeepaliveParameters{ // infinity
+	kp: &keepalive.ServerParameters{ // infinity
 		HealthParams: &keepalive.HealthParams{},
 		GoAwayParams: &keepalive.GoAwayParams{},
 	},
@@ -100,7 +100,7 @@ func WithRouter(router router.Router) Option {
 	}
 }
 
-func Keepalive(kp keepalive.KeepaliveParameters) Option {
+func Keepalive(kp keepalive.ServerParameters) Option {
 	return func(ops *options) {
 		// judge whether using inner msg
 		if kp.HealthParams != nil && kp.HealthParams.Ping != nil {

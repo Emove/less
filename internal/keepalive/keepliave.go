@@ -17,7 +17,7 @@ import (
 	"github.com/emove/less/log"
 )
 
-// Keepalive messages content
+// Keepalive messages
 const (
 	Ping   = "Ping"
 	Pong   = "Pong"
@@ -57,6 +57,13 @@ var (
 	}
 )
 
+var (
+	// default close grace time
+	defaultCloseGrace = 5 * time.Second
+	// default ping timeout
+	defaultTimeout = 10 * time.Second
+)
+
 // KeepaliveMiddleware returns a middleware to intercept and handle keepalive messages
 func KeepaliveMiddleware(kgetter func(ch *channel.Channel) *Keeper) less.Middleware {
 	return func(handler less.Handler) less.Handler {
@@ -92,11 +99,15 @@ func KeepaliveMiddleware(kgetter func(ch *channel.Channel) *Keeper) less.Middlew
 }
 
 // ConsummateKeepaliveParams consummates and checks keepalive parameters
-func ConsummateKeepaliveParams(kp *keepalive.KeepaliveParameters) {
+func ConsummateKeepaliveParams(kp *keepalive.ServerParameters) {
 	if kp.MaxChannelAge > 0 {
-		// add a jitter to MaxChannelAge.
+		// add a jitter to MaxChannelAge to spread out connection storms
 		// inspired by grpc-go. https://github.com/grpc/grpc-go/blob/master/internal/transport/http2_server.go#224
 		kp.MaxChannelAge += getJitter(kp.MaxChannelAge)
+	}
+
+	if kp.CloseGrace <= 0 {
+		kp.CloseGrace = defaultCloseGrace
 	}
 
 	healthParams := kp.HealthParams
@@ -105,7 +116,7 @@ func ConsummateKeepaliveParams(kp *keepalive.KeepaliveParameters) {
 			healthParams.Time = time.Second
 		}
 		if healthParams.Timeout <= 0 {
-			healthParams.Timeout = 10 * time.Second
+			healthParams.Timeout = defaultTimeout
 		}
 		if healthParams.Ping == nil {
 			log.Warnf("Keepalive params has set Time but without Ping-Pong params so that channels those does not see any activity after a duration of Time will be closed forcibly")
@@ -136,7 +147,7 @@ func ConsummateKeepaliveParams(kp *keepalive.KeepaliveParameters) {
 	}
 }
 
-func NewKeeper(kp *keepalive.KeepaliveParameters, state state.Stater) *Keeper {
+func NewKeeper(kp *keepalive.ServerParameters, state state.Stater) *Keeper {
 	return &Keeper{
 		kp:    kp,
 		state: state,
@@ -144,7 +155,7 @@ func NewKeeper(kp *keepalive.KeepaliveParameters, state state.Stater) *Keeper {
 }
 
 type Keeper struct {
-	kp       *keepalive.KeepaliveParameters
+	kp       *keepalive.ServerParameters
 	state    state.Stater
 	mu       sync.Mutex
 	done     int32
@@ -155,9 +166,9 @@ type Keeper struct {
 func (k *Keeper) Keepalive() {
 
 	kp := k.kp
-
+	side := k.state.Channel().Side()
 	// max channel idle time
-	if k.state.GetChannel().Side() == channel.Server && kp.MaxChannelIdleTime > 0 {
+	if side == channel.Server && kp.MaxChannelIdleTime > 0 {
 		var fn func()
 		fn = func() {
 			k.mu.Lock()
@@ -167,7 +178,7 @@ func (k *Keeper) Keepalive() {
 			}
 			k.mu.Unlock()
 
-			idleTime := k.state.GetIdleTime()
+			idleTime := k.state.IdleTime()
 			if idleTime.IsZero() {
 				// the channel is non-idle
 				timewheel.Timer.AfterFunc(kp.MaxChannelIdleTime, fn)
@@ -186,7 +197,7 @@ func (k *Keeper) Keepalive() {
 	}
 
 	// max channel age
-	if kp.MaxChannelAge > 0 {
+	if side == channel.Server && kp.MaxChannelAge > 0 {
 		timewheel.Timer.AfterFunc(kp.MaxChannelAge, func() {
 			k.mu.Lock()
 			if k.done == 1 {
@@ -211,15 +222,19 @@ func (k *Keeper) Keepalive() {
 			}
 			k.mu.Unlock()
 
+			ch := k.state.Channel()
+			if !ch.Readable() {
+				return
+			}
+
 			nowNano := time.Now().UnixNano()
-			internal := nowNano - k.state.GetLastRead()
+			internal := nowNano - k.state.LastRead()
 			if internal < int64(healthParams.Time) {
 				timewheel.Timer.AfterFunc(healthParams.Time-time.Duration(internal), fn)
 				return
 			}
 
-			ch := k.state.GetChannel()
-			if ch.Readable() && internal >= int64(healthParams.Time) {
+			if internal >= int64(healthParams.Time) {
 				if k.lastPing > atomic.LoadInt64(&k.lastPong) {
 					// has sent ping before
 					pingElapsed := nowNano - k.lastPing
@@ -269,11 +284,11 @@ func (k *Keeper) stopChannel(err error) {
 
 	ctx, cancelFunc := context.WithTimeout(context.Background(), k.kp.CloseGrace)
 	defer cancelFunc()
-	_ = k.state.GetChannel().Close(ctx, err)
+	_ = k.state.Channel().Close(ctx, err)
 }
 
 func (k *Keeper) goAwayChannel(err error) {
-	ch := k.state.GetChannel()
+	ch := k.state.Channel()
 	params := k.kp.GoAwayParams
 	if ch.Side() == channel.Server && params != nil && params.GoAway != nil {
 		if e := ch.WriteDirectly(params.GoAway); e != nil {
@@ -282,8 +297,19 @@ func (k *Keeper) goAwayChannel(err error) {
 			k.stopChannel(err)
 		}
 		log.Infow("msg", "channel will be closed by peer", "error", err)
+		closeGrace := k.kp.CloseGrace
+		timewheel.Timer.AfterFunc(closeGrace, func() {
+			// GoAway doesn't work
+			if ch.IsActive() {
+				timeout, cancelFunc := context.WithTimeout(context.Background(), closeGrace)
+				defer cancelFunc()
+				log.Infof("closing channel after close-grace due to client did not act on GoAway")
+				_ = ch.Close(timeout, err)
+			}
+		})
 		return
 	}
+
 	// client's channel or go away msg not supported
 	k.stopChannel(err)
 }
@@ -293,7 +319,7 @@ func (k *Keeper) sendPing() bool {
 	if healthParams.Ping == nil || healthParams.Pong == nil || healthParams.PingRecognizer == nil || healthParams.PongRecognizer == nil {
 		return false
 	}
-	err := k.state.GetChannel().WriteDirectly(healthParams.Ping)
+	err := k.state.Channel().WriteDirectly(healthParams.Ping)
 	if err != nil {
 		return false
 	}
