@@ -10,12 +10,9 @@ import (
 	"github.com/emove/less"
 	less_atomic "github.com/emove/less/internal/atomic"
 	"github.com/emove/less/internal/channel"
-	"github.com/emove/less/internal/keepalive"
-	"github.com/emove/less/internal/msg"
 	"github.com/emove/less/internal/recovery"
 	"github.com/emove/less/log"
 	"github.com/emove/less/pkg/io"
-	_go "github.com/emove/less/pkg/pool/go"
 	"github.com/emove/less/router"
 	"github.com/emove/less/transport"
 )
@@ -48,28 +45,8 @@ func NewTransHandler(ops ...Option) TransHandler {
 		th.closeChannel(ctx, ch.(*channel.Channel), err)
 	}}, th.ops.onChannelClosed...)
 
-	keepalive.ConsummateKeepaliveParams(opts.kp)
-
-	if opts.useLessMsgCodec {
-		opts.payloadCodec = msg.NewLessMsgPayloadCodec(opts.payloadCodec)
-	}
-
 	inbound := opts.inbound
 	outbound := opts.outbound
-
-	healthParams := th.ops.kp.HealthParams
-	if healthParams != nil && healthParams.Time > 0 {
-		kgetter := func(ch *channel.Channel) *keepalive.Keeper {
-			val, ok := th.channels.Load(ch)
-			if !ok {
-				return nil
-			}
-			return val.(*keepalive.Keeper)
-		}
-		inbound = append([]less.Middleware{keepalive.KeepaliveMiddleware(kgetter), channel.Recorder(channel.ReadEvent)}, inbound...)
-	} else {
-		inbound = append([]less.Middleware{channel.Recorder(channel.ReadEvent)}, inbound...)
-	}
 
 	outbound = append([]less.Middleware{channel.Recorder(channel.WriteEvent)}, outbound...)
 
@@ -134,9 +111,7 @@ func (th *transHandler) OnConnect(ctx context.Context, con transport.Connection)
 		return ctx, err
 	}
 
-	k := th.prepareKeepalive(ch)
 	th.channelCount.Inc()
-	th.channels.Store(ch, k)
 
 	return context.WithValue(ctx, ctxChannelKey{}, ch), nil
 }
@@ -187,12 +162,9 @@ func (th *transHandler) OnRead(ch *channel.Channel, reader io.Reader) error {
 		return nil
 	}
 
-	_go.Submit(func() {
-		if err = ch.TriggerInbound(msg); err != nil {
-			log.Errorw("remote", ch.RemoteAddr(), log.DefaultMsgKey, msg, "err", err)
-		}
-	})
-
+	if err = ch.TriggerInbound(msg); err != nil {
+		log.Errorw("remote", ch.RemoteAddr(), log.DefaultMsgKey, msg, "err", err)
+	}
 	return nil
 }
 
@@ -223,22 +195,18 @@ func (th *transHandler) Close(ctx context.Context, err error) error {
 	done := make(chan struct{})
 	closingChannels := sync.WaitGroup{}
 
-	_go.Submit(func() {
-		th.channels.Range(func(key, value interface{}) bool {
-			ch := key.(*channel.Channel)
-			closingChannels.Add(1)
-			_go.Submit(func() {
-				th.closeChannel(ctx, ch, err)
-				closingChannels.Done()
-			})
-			return true
-		})
-
-		// wait for all tasks
-		closingChannels.Wait()
-
-		close(done)
+	th.channels.Range(func(key, value interface{}) bool {
+		ch := key.(*channel.Channel)
+		closingChannels.Add(1)
+		th.closeChannel(ctx, ch, err)
+		closingChannels.Done()
+		return true
 	})
+
+	// wait for all tasks
+	closingChannels.Wait()
+
+	close(done)
 
 	for {
 		select {
@@ -279,21 +247,6 @@ func (th *transHandler) outboundHandler(_ context.Context, ch less.Channel, mess
 	}
 	defer w.Release()
 	return th.OnWrite(ch.(*channel.Channel), w, message)
-}
-
-func (th *transHandler) prepareKeepalive(ch *channel.Channel) interface{} {
-
-	kp := th.ops.kp
-	if kp.MaxChannelIdleTime > 0 ||
-		kp.MaxChannelAge > 0 ||
-		kp.HealthParams.Time > 0 {
-
-		k := keepalive.NewKeeper(kp, ch)
-		k.Keepalive()
-		return k
-	}
-
-	return struct{}{}
 }
 
 func newRouter(router router.Router) less.Middleware {

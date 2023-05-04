@@ -11,7 +11,6 @@ import (
 	"github.com/emove/less"
 	"github.com/emove/less/log"
 	"github.com/emove/less/pkg/io"
-	_go "github.com/emove/less/pkg/pool/go"
 	"github.com/emove/less/transport"
 )
 
@@ -108,7 +107,7 @@ func (ch *Channel) Close(ctx context.Context, err error) error {
 	ch.close(inactive)
 
 	// execute in a goroutine to avoid tasks WaitGroup deadlock
-	_go.Submit(func() {
+	go func() {
 		defer func() {
 			close(ch.done)
 			// reuse pipeline
@@ -132,13 +131,13 @@ func (ch *Channel) Close(ctx context.Context, err error) error {
 		}
 
 		done := make(chan struct{})
-		_go.Submit(func() {
+		go func() {
 			// waiting for all outbound tasks done
 			//log.Debugf("[channel] waiting for write tasks")
 			ch.tasks.WaitWriteTask()
 			//log.Debugf("[channel] write tasks done")
 			close(done)
-		})
+		}()
 
 		for {
 			select {
@@ -149,7 +148,7 @@ func (ch *Channel) Close(ctx context.Context, err error) error {
 			}
 		}
 
-	})
+	}()
 
 	return nil
 }
@@ -285,12 +284,12 @@ func (ch *Channel) addTask(event int) {
 	}
 	ch.idle = time.Time{}
 
-	_go.Submit(func() {
+	go func() {
 		fin := make(chan struct{})
-		_go.Submit(func() {
+		go func() {
 			ch.tasks.Wait()
 			close(fin)
-		})
+		}()
 
 		for {
 			select {
@@ -305,5 +304,5 @@ func (ch *Channel) addTask(event int) {
 				return
 			}
 		}
-	})
+	}()
 }
