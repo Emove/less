@@ -8,7 +8,6 @@ import (
 
 	"github.com/emove/less"
 	"github.com/emove/less/internal/trans"
-	_go "github.com/emove/less/pkg/pool/go"
 	"github.com/emove/less/router"
 	"github.com/emove/less/transport"
 	"github.com/emove/less/transport/tcp"
@@ -23,10 +22,9 @@ type Server struct {
 }
 
 var defaultServerOptions = &serverOptions{
-	addr:         "127.0.0.1",
-	port:         "8888",
-	transport:    tcp.New(),
-	disableGPool: false,
+	addr:      "127.0.0.1",
+	port:      "8888",
+	transport: tcp.New(),
 }
 
 type serverOptions struct {
@@ -34,7 +32,6 @@ type serverOptions struct {
 	port         string
 	transport    transport.Transport
 	transOptions []trans.Option
-	disableGPool bool
 }
 
 // NewServer creates a less server
@@ -55,10 +52,6 @@ func (srv *Server) Run() {
 
 	srv.handler = trans.NewTransHandler(srv.ops.transOptions...)
 
-	if !srv.ops.disableGPool {
-		_go.Init()
-	}
-
 	go func() {
 		err := srv.ops.transport.Listen(srv.addr, srv.handler)
 		if err != nil {
@@ -72,7 +65,6 @@ func (srv *Server) Run() {
 func (srv *Server) Shutdown() {
 	_ = srv.handler.Close(context.Background(), nil)
 	srv.ops.transport.Close()
-	_go.Release()
 }
 
 type ServerOption func(options *serverOptions)
@@ -145,20 +137,6 @@ func MaxSendMessageSize(size uint32) ServerOption {
 func MaxReceiveMessageSize(size uint32) ServerOption {
 	return func(ops *serverOptions) {
 		ops.transOptions = append(ops.transOptions, trans.MaxReceiveMessageSize(size))
-	}
-}
-
-// DisableGoPool disables ants goroutine pool
-func DisableGoPool() ServerOption {
-	return func(ops *serverOptions) {
-		ops.disableGPool = true
-	}
-}
-
-// MaxGoPoolCapacity sets the max size of ants goroutine pool
-func MaxGoPoolCapacity(size int) ServerOption {
-	return func(ops *serverOptions) {
-		_go.DefaultAntsPoolSize = size
 	}
 }
 

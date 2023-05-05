@@ -43,13 +43,12 @@ type Channel struct {
 	idle      time.Time  // records channel idle time
 }
 
-func NewChannel(con transport.Connection, side int, factory PipelineFactory) *Channel {
+func NewChannel(con transport.Connection, factory PipelineFactory) *Channel {
 	ch := &Channel{
 		ctx:   context.Background(),
 		conn:  con,
 		state: inactive,
 		done:  make(chan struct{}),
-		side:  side,
 		tasks: NewWaitGroup(),
 		idle:  time.Now(),
 	}

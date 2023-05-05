@@ -7,7 +7,6 @@ import (
 	"github.com/emove/less/codec"
 	"github.com/emove/less/codec/packet"
 	"github.com/emove/less/codec/payload"
-	"github.com/emove/less/keepalive"
 	"github.com/emove/less/router"
 )
 
@@ -24,8 +23,6 @@ type options struct {
 	router                router.Router
 	inbound               []less.Middleware
 	outbound              []less.Middleware
-	kp                    *keepalive.ServerParameters
-	useLessMsgCodec       bool
 }
 
 var defaultTransOptions = &options{
@@ -34,10 +31,6 @@ var defaultTransOptions = &options{
 	maxReceiveMessageSize: 1024 * 1024 * 4, // 4M
 	packetCodec:           packet.NewVariableLengthCodec(),
 	payloadCodec:          payload.NewTextCodec(),
-	kp: &keepalive.ServerParameters{ // infinity
-		HealthParams: &keepalive.HealthParams{},
-		GoAwayParams: &keepalive.GoAwayParams{},
-	},
 }
 
 func MaxChannelSize(size uint32) Option {
@@ -97,22 +90,5 @@ func AddOutboundMiddleware(outbound ...less.Middleware) Option {
 func WithRouter(router router.Router) Option {
 	return func(ops *options) {
 		ops.router = router
-	}
-}
-
-func Keepalive(kp keepalive.ServerParameters) Option {
-	return func(ops *options) {
-		// judge whether using inner msg
-		if kp.HealthParams != nil && kp.HealthParams.Ping != nil {
-			if _, ok := kp.HealthParams.Ping.(*keepalive.Ping); ok {
-				ops.useLessMsgCodec = true
-			}
-		}
-		if !ops.useLessMsgCodec && kp.GoAwayParams != nil && kp.GoAwayParams.GoAway != nil {
-			if _, ok := kp.GoAwayParams.GoAway.(*keepalive.GoAway); ok {
-				ops.useLessMsgCodec = true
-			}
-		}
-		ops.kp = &kp
 	}
 }

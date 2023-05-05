@@ -35,9 +35,8 @@ func NewTransHandler(ops ...Option) TransHandler {
 	for _, op := range ops {
 		op(opts)
 	}
-	th := &transHandler{
+	th := &svrTransHandler{
 		ops:          opts,
-		side:         channel.Server, // FIXME
 		channels:     sync.Map{},
 		channelCount: less_atomic.AtomicInt64(0),
 	}
@@ -58,24 +57,23 @@ func NewTransHandler(ops ...Option) TransHandler {
 	return th
 }
 
-var _ TransHandler = (*transHandler)(nil)
+var _ TransHandler = (*svrTransHandler)(nil)
 
 const (
 	serving = iota
 	closed
 )
 
-type transHandler struct {
+type svrTransHandler struct {
 	state           int32
 	ops             *options
-	side            int
 	channels        sync.Map
 	channelCount    less_atomic.AtomicInt64
 	pipelineFactory channel.PipelineFactory
 	closingCtx      context.Context
 }
 
-func (th *transHandler) OnConnect(ctx context.Context, con transport.Connection) (c context.Context, err error) {
+func (th *svrTransHandler) OnConnect(ctx context.Context, con transport.Connection) (c context.Context, err error) {
 
 	if !th.isActive() {
 		return ctx, errors.New("connect request was refused")
@@ -104,7 +102,7 @@ func (th *transHandler) OnConnect(ctx context.Context, con transport.Connection)
 		return ctx, errors.New("connection number out of limit")
 	}
 
-	ch = channel.NewChannel(con, th.side, th.pipelineFactory)
+	ch = channel.NewChannel(con, th.pipelineFactory)
 
 	if err = ch.Activate(ctx); err != nil {
 		log.Debugf("connect request from: %s failed, err: %v", con.RemoteAddr().String(), err)
@@ -116,7 +114,7 @@ func (th *transHandler) OnConnect(ctx context.Context, con transport.Connection)
 	return context.WithValue(ctx, ctxChannelKey{}, ch), nil
 }
 
-func (th *transHandler) OnMessage(ctx context.Context, _ transport.Connection) error {
+func (th *svrTransHandler) OnMessage(ctx context.Context, _ transport.Connection) error {
 
 	if !th.isActive() {
 		return errors.New("request was refused")
@@ -133,13 +131,13 @@ func (th *transHandler) OnMessage(ctx context.Context, _ transport.Connection) e
 	return th.OnRead(ch, reader)
 }
 
-func (th *transHandler) OnConnClosed(ctx context.Context, _ transport.Connection, err error) {
+func (th *svrTransHandler) OnConnClosed(ctx context.Context, _ transport.Connection, err error) {
 	ch := ctx.Value(ctxChannelKey{}).(*channel.Channel)
 
 	th.closeChannel(ctx, ch, err)
 }
 
-func (th *transHandler) OnRead(ch *channel.Channel, reader io.Reader) error {
+func (th *svrTransHandler) OnRead(ch *channel.Channel, reader io.Reader) error {
 
 	if !th.isActive() {
 		return errors.New("transport was closed")
@@ -168,7 +166,7 @@ func (th *transHandler) OnRead(ch *channel.Channel, reader io.Reader) error {
 	return nil
 }
 
-func (th *transHandler) OnWrite(ch *channel.Channel, writer io.Writer, msg interface{}) error {
+func (th *svrTransHandler) OnWrite(ch *channel.Channel, writer io.Writer, msg interface{}) error {
 	defer recovery.Recover(func(err error) {
 		th.closeChannel(context.Background(), ch, err)
 	})
@@ -185,7 +183,7 @@ func (th *transHandler) OnWrite(ch *channel.Channel, writer io.Writer, msg inter
 	return th.ops.packetCodec.Encode(msg, writer, th.ops.payloadCodec)
 }
 
-func (th *transHandler) Close(ctx context.Context, err error) error {
+func (th *svrTransHandler) Close(ctx context.Context, err error) error {
 
 	if !atomic.CompareAndSwapInt32(&th.state, serving, closed) {
 		return nil
@@ -218,7 +216,7 @@ func (th *transHandler) Close(ctx context.Context, err error) error {
 	}
 }
 
-func (th *transHandler) closeChannel(ctx context.Context, ch *channel.Channel, err error) {
+func (th *svrTransHandler) closeChannel(ctx context.Context, ch *channel.Channel, err error) {
 	var v interface{}
 	ok := false
 	if v, ok = th.channels.LoadAndDelete(ch); !ok {
@@ -233,14 +231,14 @@ func (th *transHandler) closeChannel(ctx context.Context, ch *channel.Channel, e
 	_ = ch.Close(ctx, err)
 }
 
-func (th *transHandler) isActive() bool {
+func (th *svrTransHandler) isActive() bool {
 	if serving != atomic.LoadInt32(&th.state) {
 		return false
 	}
 	return true
 }
 
-func (th *transHandler) outboundHandler(_ context.Context, ch less.Channel, message interface{}) error {
+func (th *svrTransHandler) outboundHandler(_ context.Context, ch less.Channel, message interface{}) error {
 	w, err := ch.(*channel.Channel).Writer()
 	if err != nil {
 		return err
