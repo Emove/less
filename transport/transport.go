@@ -33,6 +33,7 @@ type Dialer interface {
 
 // Transport defines a Transport
 type Transport interface {
+	GracefulCloser
 }
 
 type DefaultTransport interface {
@@ -48,5 +49,4 @@ type DrivenTransport interface {
 
 type Acceptor interface {
 	Accept() (Connection, error)
-	Close()
 }

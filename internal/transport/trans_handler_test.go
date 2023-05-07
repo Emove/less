@@ -12,7 +12,7 @@ func Test_newRouter(t *testing.T) {
 		return nil
 	}
 
-	mw := newRouter(func(ctx context.Context, channel less.Channel, msg interface{}) (less.Handler, error) {
+	mw := NewRouterMiddleware(func(ctx context.Context, channel less.Channel, msg interface{}) (less.Handler, error) {
 		return func(ctx context.Context, ch less.Channel, message interface{}) error {
 			t.Logf("router handler, handle message: %v", message)
 			return nil

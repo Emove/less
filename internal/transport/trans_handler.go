@@ -106,6 +106,7 @@ func (th *svrTransHandler) OnConnect(ctx context.Context, con transport.Connecti
 	}
 
 	th.channelCount.Inc()
+	th.channels.Store(ch, struct{}{})
 
 	return context.WithValue(ctx, ctxChannelKey{}, ch), nil
 }
@@ -169,10 +170,6 @@ func (th *svrTransHandler) OnWrite(ch *channel.Channel, msg interface{}) error {
 	if serving != atomic.LoadInt32(&th.state) {
 		return fmt.Errorf("transport has been closed")
 	}
-
-	if th.ops.maxSendMessageSize > 0 {
-		// TODO limit writer buffer
-	}
 	writer, err := ch.Writer()
 	if err != nil {
 		return err
@@ -182,37 +179,13 @@ func (th *svrTransHandler) OnWrite(ch *channel.Channel, msg interface{}) error {
 	return th.ops.packetCodec.Encode(msg, writer, th.ops.payloadCodec)
 }
 
-func (th *svrTransHandler) Close(ctx context.Context, err error) error {
+func (th *svrTransHandler) Close(ctx context.Context, _ error) error {
 
 	if !atomic.CompareAndSwapInt32(&th.state, serving, closed) {
 		return nil
 	}
 	th.closingCtx = ctx
-
-	done := make(chan struct{})
-	closingChannels := sync.WaitGroup{}
-
-	th.channels.Range(func(key, value interface{}) bool {
-		ch := key.(*channel.Channel)
-		closingChannels.Add(1)
-		th.closeChannel(ctx, ch, err)
-		closingChannels.Done()
-		return true
-	})
-
-	// wait for all tasks
-	closingChannels.Wait()
-
-	close(done)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-done:
-			return nil
-		}
-	}
+	return nil
 }
 
 func (th *svrTransHandler) closeChannel(ctx context.Context, ch *channel.Channel, err error) {
