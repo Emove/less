@@ -1,4 +1,4 @@
-package trans
+package transport
 
 import (
 	"context"
@@ -12,14 +12,12 @@ import (
 	"github.com/emove/less/internal/channel"
 	"github.com/emove/less/internal/recovery"
 	"github.com/emove/less/log"
-	"github.com/emove/less/pkg/io"
-	"github.com/emove/less/router"
 	"github.com/emove/less/transport"
 )
 
 type BoundHandler interface {
-	OnRead(ch *channel.Channel, reader io.Reader) (err error)
-	OnWrite(ch *channel.Channel, writer io.Writer, msg interface{}) error
+	OnRead(ch *channel.Channel, msg interface{}) (err error)
+	OnWrite(ch *channel.Channel, msg interface{}) error
 }
 
 type ctxChannelKey struct{}
@@ -47,9 +45,7 @@ func NewTransHandler(ops ...Option) TransHandler {
 	inbound := opts.inbound
 	outbound := opts.outbound
 
-	outbound = append([]less.Middleware{channel.Recorder(channel.WriteEvent)}, outbound...)
-
-	th.pipelineFactory = channel.NewPipelineFactory(opts.onChannel, onChannelClosed, inbound, outbound, newRouter(opts.router), th.outboundHandler)
+	th.pipelineFactory = channel.NewPipelineFactory(opts.onChannel, onChannelClosed, inbound, outbound, NewRouterMiddleware(opts.router), OutboundHandler(th))
 
 	log.Infow("max-channel-size", opts.maxChannelSize, "max-send-message-size", opts.maxSendMessageSize, "max-receive-message-size", opts.maxReceiveMessageSize)
 	log.Infow("packet-codec", opts.packetCodec.Name(), "payload-codec", opts.payloadCodec.Name())
@@ -98,7 +94,7 @@ func (th *svrTransHandler) OnConnect(ctx context.Context, con transport.Connecti
 
 	// check connection limit
 	if th.ops.maxChannelSize > 0 && th.channelCount.Value() > int64(th.ops.maxChannelSize) {
-		log.Infof("new connect request was refused, concurrent channel nums: %d", th.channelCount.Value())
+		log.Infof("new connect request was refused, current channel nums: %d", th.channelCount.Value())
 		return ctx, errors.New("connection number out of limit")
 	}
 
@@ -128,17 +124,6 @@ func (th *svrTransHandler) OnMessage(ctx context.Context, _ transport.Connection
 	}
 
 	defer reader.Release()
-	return th.OnRead(ch, reader)
-}
-
-func (th *svrTransHandler) OnConnClosed(ctx context.Context, _ transport.Connection, err error) {
-	ch := ctx.Value(ctxChannelKey{}).(*channel.Channel)
-
-	th.closeChannel(ctx, ch, err)
-}
-
-func (th *svrTransHandler) OnRead(ch *channel.Channel, reader io.Reader) error {
-
 	if !th.isActive() {
 		return errors.New("transport was closed")
 	}
@@ -159,14 +144,24 @@ func (th *svrTransHandler) OnRead(ch *channel.Channel, reader io.Reader) error {
 		log.Errorf("receive a message but message size greater than max-receive-message-size, message size: %d, max: %d", reader.Length(), th.ops.maxReceiveMessageSize)
 		return nil
 	}
+	return th.OnRead(ch, msg)
+}
 
+func (th *svrTransHandler) OnConnClosed(ctx context.Context, _ transport.Connection, err error) {
+	ch := ctx.Value(ctxChannelKey{}).(*channel.Channel)
+
+	th.closeChannel(ctx, ch, err)
+}
+
+func (th *svrTransHandler) OnRead(ch *channel.Channel, msg interface{}) error {
+	var err error
 	if err = ch.TriggerInbound(msg); err != nil {
 		log.Errorw("remote", ch.RemoteAddr(), log.DefaultMsgKey, msg, "err", err)
 	}
 	return nil
 }
 
-func (th *svrTransHandler) OnWrite(ch *channel.Channel, writer io.Writer, msg interface{}) error {
+func (th *svrTransHandler) OnWrite(ch *channel.Channel, msg interface{}) error {
 	defer recovery.Recover(func(err error) {
 		th.closeChannel(context.Background(), ch, err)
 	})
@@ -178,7 +173,11 @@ func (th *svrTransHandler) OnWrite(ch *channel.Channel, writer io.Writer, msg in
 	if th.ops.maxSendMessageSize > 0 {
 		// TODO limit writer buffer
 	}
-
+	writer, err := ch.Writer()
+	if err != nil {
+		return err
+	}
+	defer writer.Release()
 	// do encode
 	return th.ops.packetCodec.Encode(msg, writer, th.ops.payloadCodec)
 }
@@ -236,28 +235,4 @@ func (th *svrTransHandler) isActive() bool {
 		return false
 	}
 	return true
-}
-
-func (th *svrTransHandler) outboundHandler(_ context.Context, ch less.Channel, message interface{}) error {
-	w, err := ch.(*channel.Channel).Writer()
-	if err != nil {
-		return err
-	}
-	defer w.Release()
-	return th.OnWrite(ch.(*channel.Channel), w, message)
-}
-
-func newRouter(router router.Router) less.Middleware {
-	return func(handler less.Handler) less.Handler {
-		return func(ctx context.Context, ch less.Channel, message interface{}) error {
-			//if err := handler(ctx, ch, message);err != nil {
-			//	return err
-			//}
-			h, err := router(ctx, ch, message)
-			if err != nil {
-				return err
-			}
-			return h(ctx, ch, message)
-		}
-	}
 }

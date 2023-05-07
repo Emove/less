@@ -17,9 +17,6 @@ type EventDriver interface {
 	OnConnClosed(ctx context.Context, con Connection, err error)
 }
 
-// NewTransport defines a func to new transport.
-type NewTransport func(ctx context.Context, ops ...Option) Transport
-
 // Listener defines the behaviors of Listener.
 type Listener interface {
 	// Listen the addr and accept the network connection request.
@@ -31,11 +28,25 @@ type Listener interface {
 // Dialer defines a Dialer.
 type Dialer interface {
 	// Dial dials the remote endpoint.
-	Dial(net, addr string, driver EventDriver) error
+	Dial(net, addr string) error
 }
 
 // Transport defines a Transport
 type Transport interface {
-	Listener
+}
+
+type DefaultTransport interface {
+	Transport
+	Acceptor
 	Dialer
+}
+
+type DrivenTransport interface {
+	Transport
+	SetEventDriver(driver EventDriver)
+}
+
+type Acceptor interface {
+	Accept() (Connection, error)
+	Close()
 }

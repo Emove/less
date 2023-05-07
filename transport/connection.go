@@ -13,6 +13,11 @@ const (
 
 // Connection defines an interface of underlying connection.
 type Connection interface {
+
+	//Context() context.Context
+
+	// SetContext(ctx context.Context)
+
 	Read(buf []byte) (n int, err error)
 
 	// Reader returns a Reader with buffer size limit.

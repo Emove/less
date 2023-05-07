@@ -7,7 +7,7 @@ import (
 	"net"
 
 	"github.com/emove/less"
-	"github.com/emove/less/internal/trans"
+	"github.com/emove/less/internal/transport"
 	"github.com/emove/less/router"
 	"github.com/emove/less/transport"
 	"github.com/emove/less/transport/tcp"
@@ -18,7 +18,7 @@ type Server struct {
 	addr string
 	ops  *serverOptions
 
-	handler trans.TransHandler
+	handler transport.TransHandler
 }
 
 var defaultServerOptions = &serverOptions{
@@ -31,7 +31,7 @@ type serverOptions struct {
 	addr         string
 	port         string
 	transport    transport.Transport
-	transOptions []trans.Option
+	transOptions []transport.Option
 }
 
 // NewServer creates a less server
@@ -50,7 +50,7 @@ func (srv *Server) Run() {
 
 	srv.addr = parseAddr(srv)
 
-	srv.handler = trans.NewTransHandler(srv.ops.transOptions...)
+	srv.handler = transport.NewTransHandler(srv.ops.transOptions...)
 
 	go func() {
 		err := srv.ops.transport.Listen(srv.addr, srv.handler)
@@ -80,7 +80,7 @@ func WithTransport(transport transport.Transport) ServerOption {
 func WithOnChannel(onChannel ...less.OnChannel) ServerOption {
 	return func(ops *serverOptions) {
 		if len(onChannel) > 0 {
-			ops.transOptions = append(ops.transOptions, trans.AddOnChannel(onChannel...))
+			ops.transOptions = append(ops.transOptions, transport.AddOnChannel(onChannel...))
 		}
 	}
 }
@@ -89,7 +89,7 @@ func WithOnChannel(onChannel ...less.OnChannel) ServerOption {
 func WithOnChannelClosed(onChannelClosed ...less.OnChannelClosed) ServerOption {
 	return func(ops *serverOptions) {
 		if len(onChannelClosed) > 0 {
-			ops.transOptions = append(ops.transOptions, trans.AddOnChannelClosed(onChannelClosed...))
+			ops.transOptions = append(ops.transOptions, transport.AddOnChannelClosed(onChannelClosed...))
 		}
 	}
 }
@@ -97,7 +97,7 @@ func WithOnChannelClosed(onChannelClosed ...less.OnChannelClosed) ServerOption {
 // WithRouter sets message router
 func WithRouter(router router.Router) ServerOption {
 	return func(ops *serverOptions) {
-		ops.transOptions = append(ops.transOptions, trans.WithRouter(router))
+		ops.transOptions = append(ops.transOptions, transport.WithRouter(router))
 	}
 }
 
@@ -105,7 +105,7 @@ func WithRouter(router router.Router) ServerOption {
 func WithInboundMiddleware(mws ...less.Middleware) ServerOption {
 	return func(ops *serverOptions) {
 		if len(mws) > 0 {
-			ops.transOptions = append(ops.transOptions, trans.AddInboundMiddleware(mws...))
+			ops.transOptions = append(ops.transOptions, transport.AddInboundMiddleware(mws...))
 		}
 	}
 }
@@ -114,7 +114,7 @@ func WithInboundMiddleware(mws ...less.Middleware) ServerOption {
 func WithOutboundMiddleware(mws ...less.Middleware) ServerOption {
 	return func(ops *serverOptions) {
 		if len(mws) > 0 {
-			ops.transOptions = append(ops.transOptions, trans.AddOutboundMiddleware(mws...))
+			ops.transOptions = append(ops.transOptions, transport.AddOutboundMiddleware(mws...))
 		}
 	}
 }
@@ -122,21 +122,21 @@ func WithOutboundMiddleware(mws ...less.Middleware) ServerOption {
 // MaxChannelSize sets the max size of channels
 func MaxChannelSize(size uint32) ServerOption {
 	return func(ops *serverOptions) {
-		ops.transOptions = append(ops.transOptions, trans.MaxChannelSize(size))
+		ops.transOptions = append(ops.transOptions, transport.MaxChannelSize(size))
 	}
 }
 
 // MaxSendMessageSize sets the max size of message when send
 func MaxSendMessageSize(size uint32) ServerOption {
 	return func(ops *serverOptions) {
-		ops.transOptions = append(ops.transOptions, trans.MaxSendMessageSize(size))
+		ops.transOptions = append(ops.transOptions, transport.MaxSendMessageSize(size))
 	}
 }
 
 // MaxReceiveMessageSize sets the max size of message when receive
 func MaxReceiveMessageSize(size uint32) ServerOption {
 	return func(ops *serverOptions) {
-		ops.transOptions = append(ops.transOptions, trans.MaxReceiveMessageSize(size))
+		ops.transOptions = append(ops.transOptions, transport.MaxReceiveMessageSize(size))
 	}
 }
 

@@ -3,15 +3,12 @@ package channel
 import (
 	"context"
 	"errors"
-	"net"
-	"sync"
-	"sync/atomic"
-	"time"
-
 	"github.com/emove/less"
 	"github.com/emove/less/log"
 	"github.com/emove/less/pkg/io"
 	"github.com/emove/less/transport"
+	"net"
+	"sync/atomic"
 )
 
 const (
@@ -35,24 +32,19 @@ type Channel struct {
 	state     int32
 	done      chan struct{}
 	pl        *pipeline
-	tasks     *WaitGroup
 	side      int // represents client's channel or server's channel
 	lastRead  int64
 	lastWrite int64
-	mu        sync.Mutex // guard the following
-	idle      time.Time  // records channel idle time
 }
 
 func NewChannel(con transport.Connection, factory PipelineFactory) *Channel {
 	ch := &Channel{
 		ctx:   context.Background(),
+		pl:    factory(),
 		conn:  con,
 		state: inactive,
 		done:  make(chan struct{}),
-		tasks: NewWaitGroup(),
-		idle:  time.Now(),
 	}
-	ch.pl = factory(ch)
 	return ch
 }
 
@@ -72,7 +64,7 @@ func (ch *Channel) LocalAddr() net.Addr {
 
 func (ch *Channel) Write(msg interface{}) error {
 	if ch.calState(writeable) {
-		return ch.pl.FireOutbound(msg)
+		return ch.pl.FireOutbound(ch, msg)
 	}
 	return ErrChannelWriterClosed
 }
@@ -105,50 +97,6 @@ func (ch *Channel) Close(ctx context.Context, err error) error {
 	}
 	ch.close(inactive)
 
-	// execute in a goroutine to avoid tasks WaitGroup deadlock
-	go func() {
-		defer func() {
-			close(ch.done)
-			// reuse pipeline
-			ch.pl.Release()
-			// close connection
-			_ = ch.conn.Close()
-		}()
-
-		//log.Debugf("[channel] waiting for read tasks")
-		ch.tasks.WaitReadTask()
-		//log.Debugf("[channel] read tasks done")
-
-		// fires OnChannelClosed hook after inbound tasks finished
-		// to avoid causing errors in case of customer holding that
-		// something like session about channel
-		ch.pl.FireOnChannelClosed(err)
-
-		if err != nil {
-			log.Debugw("msg", "channel closed", "error", err)
-			return
-		}
-
-		done := make(chan struct{})
-		go func() {
-			// waiting for all outbound tasks done
-			//log.Debugf("[channel] waiting for write tasks")
-			ch.tasks.WaitWriteTask()
-			//log.Debugf("[channel] write tasks done")
-			close(done)
-		}()
-
-		for {
-			select {
-			case <-done:
-				return
-			case <-ctx.Done():
-				return
-			}
-		}
-
-	}()
-
 	return nil
 }
 
@@ -171,12 +119,6 @@ func (ch *Channel) AddOutboundMiddleware(mw ...less.Middleware) {
 
 func (ch *Channel) Channel() *Channel {
 	return ch
-}
-
-func (ch *Channel) IdleTime() time.Time {
-	ch.mu.Lock()
-	defer ch.mu.Unlock()
-	return ch.idle
 }
 
 func (ch *Channel) LastRead() int64 {
@@ -208,34 +150,20 @@ func (ch *Channel) SetContext(ctx context.Context) {
 }
 
 func (ch *Channel) Activate(ctx context.Context) error {
-	err := ch.pl.FireOnChannel(ctx)
+	err := ch.pl.FireOnChannel(ch, ctx)
+	if err == nil {
+		atomic.StoreInt32(&ch.state, readWriteMode)
+	}
 	log.Infof("new channel active from: %s", ch.conn.RemoteAddr().String())
 	return err
 }
 
 func (ch *Channel) TriggerInbound(msg interface{}) error {
-	return ch.pl.FireInbound(msg)
-}
-
-func (ch *Channel) WriteDirectly(msg interface{}) error {
-	return ch.pl.Outbound(msg)
+	return ch.pl.FireInbound(ch, msg)
 }
 
 func (ch *Channel) Side() int {
 	return ch.side
-}
-
-// Recorder returns a middleware to record channel tasks
-func Recorder(event int) less.Middleware {
-	return func(handler less.Handler) less.Handler {
-		return func(ctx context.Context, c less.Channel, message interface{}) error {
-			ch := c.(*Channel)
-			ch.addTask(event)
-			err := handler(ctx, ch, message)
-			ch.tasks.Done(event)
-			return err
-		}
-	}
 }
 
 func (ch *Channel) close(state int32) {
@@ -251,57 +179,6 @@ func (ch *Channel) close(state int32) {
 	}
 }
 
-func (ch *Channel) active() {
-	atomic.StoreInt32(&ch.state, readWriteMode)
-}
-
 func (ch *Channel) calState(state int32) bool {
 	return atomic.LoadInt32(&ch.state)&state == state
-}
-
-func (ch *Channel) addTask(event int) {
-	ch.tasks.Add(event)
-
-	switch event {
-	case ReadEvent:
-		atomic.StoreInt64(&ch.lastRead, time.Now().UnixNano())
-	case WriteEvent:
-		atomic.StoreInt64(&ch.lastWrite, time.Now().UnixNano())
-	}
-
-	// indicates channel is busy
-	if ch.idle.IsZero() {
-		return
-	}
-
-	ch.mu.Lock()
-	defer ch.mu.Unlock()
-
-	// check again
-	if ch.idle.IsZero() {
-		return
-	}
-	ch.idle = time.Time{}
-
-	go func() {
-		fin := make(chan struct{})
-		go func() {
-			ch.tasks.Wait()
-			close(fin)
-		}()
-
-		for {
-			select {
-			case <-ch.done:
-				return
-			case <-fin:
-				func() {
-					ch.mu.Lock()
-					defer ch.mu.Unlock()
-					ch.idle = time.Now()
-				}()
-				return
-			}
-		}
-	}()
 }

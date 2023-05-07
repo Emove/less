@@ -8,7 +8,7 @@ import (
 )
 
 // PipelineFactory is a factory to create Pipeline.
-type PipelineFactory func(ch *Channel) *pipeline
+type PipelineFactory func() *pipeline
 
 var pool = sync.Pool{}
 
@@ -28,9 +28,8 @@ func NewPipelineFactory(
 			outboundHandler:      outboundHandler,
 		}
 	}
-	return func(ch *Channel) *pipeline {
+	return func() *pipeline {
 		pl := pool.Get().(*pipeline)
-		pl.ch = ch
 		return pl
 	}
 }
@@ -43,10 +42,30 @@ type pipeline struct {
 	router               less.Middleware
 	outboundHandler      less.Handler
 
-	ch    *Channel
 	chocc []less.OnChannelClosed
 	chIn  []less.Middleware
 	chOut []less.Middleware
+}
+
+func (pl *pipeline) OnRead(ch *Channel, msg interface{}) (err error) {
+	mws := less.Chain(less.Chain(pl.inbound...), less.Chain(pl.chIn...))
+
+	if pl.router != nil {
+		mws = less.Chain(mws, pl.router)
+	}
+
+	return mws(emptyHandler)(ch.Context(), ch, msg)
+}
+
+func (pl *pipeline) OnWrite(ch *Channel, msg interface{}) error {
+	mws := less.Chain(less.Chain(pl.chOut...), less.Chain(pl.outbound...))
+	handler := pl.outboundHandler
+
+	if handler == nil {
+		handler = emptyHandler
+	}
+
+	return mws(handler)(ch.Context(), ch, msg)
 }
 
 // AddOnChannelClosed adds channel's specific OnChannelClosed hooks
@@ -71,45 +90,43 @@ func (pl *pipeline) AddOutbound(outbound ...less.Middleware) {
 }
 
 // FireOnChannel fires OnChannel hooks
-func (pl *pipeline) FireOnChannel(ctx context.Context) (err error) {
-	pl.ch.SetContext(ctx)
+func (pl *pipeline) FireOnChannel(ch *Channel, ctx context.Context) (err error) {
+	ch.SetContext(ctx)
 	for _, onChannel := range pl.onChannelChain {
-		ctx, err = onChannel(ctx, pl.ch)
+		ctx, err = onChannel(ctx, ch)
 		if err != nil {
 			return err
 		}
 		if ctx != nil {
-			pl.ch.SetContext(ctx)
+			ch.SetContext(ctx)
 		}
 	}
-	pl.ch.active()
 	return nil
 }
 
 // FireOnChannelClosed fires common onChannelClosed hooks and channel's specific OnChannelClosed hooks
-func (pl *pipeline) FireOnChannelClosed(err error) {
+func (pl *pipeline) FireOnChannelClosed(ch *Channel, err error) {
 	onChannelClosedChain := append(pl.onChannelClosedChain, pl.chocc...)
 	for _, onChannelClosed := range onChannelClosedChain {
-		onChannelClosed(pl.ch.Context(), pl.ch, err)
+		onChannelClosed(ch.Context(), ch, err)
 	}
 }
 
 // FireInbound fires common inbound middlewares and channel's specific inbound middlewares
-func (pl *pipeline) FireInbound(message interface{}) error {
+func (pl *pipeline) FireInbound(ch *Channel, message interface{}) error {
 
-	ch := pl.ch
 	mws := less.Chain(less.Chain(pl.inbound...), less.Chain(pl.chIn...))
 
 	if pl.router != nil {
 		mws = less.Chain(mws, pl.router)
 	}
 
-	return mws(emptyHandler)(ch.Context(), pl.ch, message)
+	return mws(emptyHandler)(ch.Context(), ch, message)
 }
 
 // FireOutbound fires common outbound middlewares and channel's specific outbound middlewares
-func (pl *pipeline) FireOutbound(message interface{}) error {
-	ch := pl.ch
+func (pl *pipeline) FireOutbound(ch *Channel, message interface{}) error {
+
 	mws := less.Chain(less.Chain(pl.chOut...), less.Chain(pl.outbound...))
 	handler := pl.outboundHandler
 
@@ -120,13 +137,8 @@ func (pl *pipeline) FireOutbound(message interface{}) error {
 	return mws(handler)(ch.Context(), ch, message)
 }
 
-func (pl *pipeline) Outbound(message interface{}) error {
-	return pl.outboundHandler(pl.ch.ctx, pl.ch, message)
-}
-
 // Release releases channel's specific hooks and reuse pipeline
 func (pl *pipeline) Release() {
-	pl.ch = nil
 	pl.chocc = nil
 	pl.chIn = nil
 	pl.chOut = nil
