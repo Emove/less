@@ -59,13 +59,7 @@ func (pl *pipeline) OnRead(ch *Channel, msg interface{}) (err error) {
 
 func (pl *pipeline) OnWrite(ch *Channel, msg interface{}) error {
 	mws := less.Chain(less.Chain(pl.chOut...), less.Chain(pl.outbound...))
-	handler := pl.outboundHandler
-
-	if handler == nil {
-		handler = emptyHandler
-	}
-
-	return mws(handler)(ch.Context(), ch, msg)
+	return mws(pl.outboundHandler)(ch.Context(), ch, msg)
 }
 
 // AddOnChannelClosed adds channel's specific OnChannelClosed hooks
@@ -110,31 +104,6 @@ func (pl *pipeline) FireOnChannelClosed(ch *Channel, err error) {
 	for _, onChannelClosed := range onChannelClosedChain {
 		onChannelClosed(ch.Context(), ch, err)
 	}
-}
-
-// FireInbound fires common inbound middlewares and channel's specific inbound middlewares
-func (pl *pipeline) FireInbound(ch *Channel, message interface{}) error {
-
-	mws := less.Chain(less.Chain(pl.inbound...), less.Chain(pl.chIn...))
-
-	if pl.router != nil {
-		mws = less.Chain(mws, pl.router)
-	}
-
-	return mws(emptyHandler)(ch.Context(), ch, message)
-}
-
-// FireOutbound fires common outbound middlewares and channel's specific outbound middlewares
-func (pl *pipeline) FireOutbound(ch *Channel, message interface{}) error {
-
-	mws := less.Chain(less.Chain(pl.chOut...), less.Chain(pl.outbound...))
-	handler := pl.outboundHandler
-
-	if handler == nil {
-		handler = emptyHandler
-	}
-
-	return mws(handler)(ch.Context(), ch, message)
 }
 
 // Release releases channel's specific hooks and reuse pipeline

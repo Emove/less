@@ -64,7 +64,7 @@ func (ch *Channel) LocalAddr() net.Addr {
 
 func (ch *Channel) Write(msg interface{}) error {
 	if ch.calState(writeable) {
-		return ch.pl.FireOutbound(ch, msg)
+		return ch.pl.OnWrite(ch, msg)
 	}
 	return ErrChannelWriterClosed
 }
@@ -159,7 +159,7 @@ func (ch *Channel) Activate(ctx context.Context) error {
 }
 
 func (ch *Channel) TriggerInbound(msg interface{}) error {
-	return ch.pl.FireInbound(ch, msg)
+	return ch.pl.OnRead(ch, msg)
 }
 
 func (ch *Channel) Side() int {
