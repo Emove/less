@@ -89,15 +89,16 @@ func (ch *Channel) Writeable() bool {
 	return ch.calState(writeable)
 }
 
-func (ch *Channel) Close(ctx context.Context, err error) error {
+func (ch *Channel) Close(err error) {
 
-	old := atomic.LoadInt32(&ch.state)
-	if inactive == old || !atomic.CompareAndSwapInt32(&ch.state, old, inactive) {
-		return ErrChannelClosed
-	}
+	//old := atomic.LoadInt32(&ch.state)
+	//if inactive == old || !atomic.CompareAndSwapInt32(&ch.state, old, inactive) {
+	//	return ErrChannelClosed
+	//}
 	ch.close(inactive)
+	ch.pl.FireOnChannelClosed(ch, err)
 
-	return nil
+	//return nil
 }
 
 // AddOnChannelClosed adds OnChannelClosed for channel

@@ -39,7 +39,7 @@ type serverOptions struct {
 	shutdownHooks []ShutdownHook
 }
 
-// NewServer creates a less server
+// NewServer creates a server
 func NewServer(addr string, op ...SerOption) *Server {
 	ops := defaultServerOptions
 
@@ -57,7 +57,7 @@ func (srv *Server) Run() {
 
 	srv.addr = parseAddr(srv)
 
-	srv.handler = trans.NewTransHandler(srv.ops.transOptions...)
+	srv.handler = trans.NewSrvTransHandler(srv.ctx, srv.ops.transOptions...)
 
 	go func() {
 		switch srv.ops.transport.(type) {
@@ -75,8 +75,8 @@ func (srv *Server) Run() {
 
 // Shutdown stops the Server, closes the transporter and all channels
 func (srv *Server) Shutdown(ctx context.Context, err error) {
-	// close the transportHandler to refuse new connection request and Read event
-	_ = srv.handler.Close(context.Background(), err)
+	// close the transportHandler to refuse connecting request and Read event
+	_ = srv.handler.Close()
 	hooks := srv.ops.shutdownHooks
 	if len(hooks) > 0 {
 		for _, hook := range hooks {
@@ -84,6 +84,11 @@ func (srv *Server) Shutdown(ctx context.Context, err error) {
 		}
 	}
 	_ = srv.ops.transport.Close(context.Background(), err)
+	srv.cancelFunc()
+	select {
+	case <-srv.ctx.Done():
+		return
+	}
 }
 
 type SerOption func(options *serverOptions)

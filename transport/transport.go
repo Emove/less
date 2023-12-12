@@ -33,12 +33,12 @@ type Dialer interface {
 
 // Transport defines a Transport
 type Transport interface {
-	GracefulCloser
+	Close()
 }
 
-type DefaultTransport interface {
+type BlockingTransport interface {
 	Transport
-	Acceptor
+	Listener
 	Dialer
 }
 

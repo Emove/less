@@ -30,7 +30,7 @@ type Channel interface {
 	IsActive() bool
 
 	// Close closing the channel after inbound and outbound event done.
-	Close(ctx context.Context, err error) error
+	Close(err error)
 
 	// CloseReader closes the channel reader then the channel is unable to receive any message.
 	CloseReader()

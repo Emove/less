@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"sync/atomic"
 
 	"github.com/emove/less"
@@ -25,21 +24,21 @@ type ctxChannelKey struct{}
 type TransHandler interface {
 	transport.EventDriver
 	BoundHandler
-	transport.GracefulCloser
+	Close() error
 }
 
-func NewTransHandler(ops ...Option) TransHandler {
+func NewSrvTransHandler(ctx context.Context, ops ...Option) TransHandler {
 	opts := defaultTransOptions
 	for _, op := range ops {
 		op(opts)
 	}
 	th := &svrTransHandler{
 		ops:          opts,
-		channels:     sync.Map{},
+		ctx:          ctx,
 		channelCount: less_atomic.AtomicInt64(0),
 	}
 	onChannelClosed := append([]less.OnChannelClosed{func(ctx context.Context, ch less.Channel, err error) {
-		th.closeChannel(ctx, ch.(*channel.Channel), err)
+		th.closeChannel()
 	}}, th.ops.onChannelClosed...)
 
 	inbound := opts.inbound
@@ -63,16 +62,15 @@ const (
 type svrTransHandler struct {
 	state           int32
 	ops             *options
-	channels        sync.Map
+	ctx             context.Context
 	channelCount    less_atomic.AtomicInt64
 	pipelineFactory channel.PipelineFactory
-	closingCtx      context.Context
 }
 
 func (th *svrTransHandler) OnConnect(ctx context.Context, con transport.Connection) (c context.Context, err error) {
 
 	if !th.isActive() {
-		return ctx, errors.New("connect request was refused")
+		return ctx, errors.New("server has been shutdown")
 	}
 	var ch *channel.Channel
 	defer func() {
@@ -80,21 +78,17 @@ func (th *svrTransHandler) OnConnect(ctx context.Context, con transport.Connecti
 			log.Errorw("err", fmt.Sprintf("panic on channel: %v", e))
 			err = e
 		})
-		closingCtx := context.Background()
-		if !th.isActive() {
-			err = errors.New("transport has been closed")
-			closingCtx = th.closingCtx
-		}
 		if err != nil && ch != nil {
-			_ = ch.Close(closingCtx, err)
+			ch.Close(err)
 		}
 	}()
 
 	log.Debugf("receive a connect request from: %s", con.RemoteAddr().String())
 
 	// check connection limit
-	if th.ops.maxChannelSize > 0 && th.channelCount.Value() > int64(th.ops.maxChannelSize) {
-		log.Infof("new connect request was refused, current channel nums: %d", th.channelCount.Value())
+	if th.ops.maxChannelSize > 0 && th.channelCount.Inc() > int64(th.ops.maxChannelSize) {
+		th.channelCount.Dec()
+		log.Infof("new connection request was refused, current channel nums: %d", th.channelCount.Value())
 		return ctx, errors.New("connection number out of limit")
 	}
 
@@ -104,9 +98,6 @@ func (th *svrTransHandler) OnConnect(ctx context.Context, con transport.Connecti
 		log.Debugf("connect request from: %s failed, err: %v", con.RemoteAddr().String(), err)
 		return ctx, err
 	}
-
-	th.channelCount.Inc()
-	th.channels.Store(ch, struct{}{})
 
 	return context.WithValue(ctx, ctxChannelKey{}, ch), nil
 }
@@ -130,17 +121,16 @@ func (th *svrTransHandler) OnMessage(ctx context.Context, _ transport.Connection
 	}
 
 	defer recovery.Recover(func(err error) {
-		th.closeChannel(context.Background(), ch, err)
+		ch.Close(err)
 	})
 
-	// do decode
 	msg, err := th.ops.packetCodec.Decode(reader, th.ops.payloadCodec)
 	if err != nil {
-		// close channel
-		th.closeChannel(context.Background(), ch, err)
+		ch.Close(err)
 		return err
 	}
 
+	// TODO 改用limitWriter
 	if th.ops.maxReceiveMessageSize > 0 && uint32(reader.Length()) > th.ops.maxReceiveMessageSize {
 		log.Errorf("receive a message but message size greater than max-receive-message-size, message size: %d, max: %d", reader.Length(), th.ops.maxReceiveMessageSize)
 		return nil
@@ -150,8 +140,7 @@ func (th *svrTransHandler) OnMessage(ctx context.Context, _ transport.Connection
 
 func (th *svrTransHandler) OnConnClosed(ctx context.Context, _ transport.Connection, err error) {
 	ch := ctx.Value(ctxChannelKey{}).(*channel.Channel)
-
-	th.closeChannel(ctx, ch, err)
+	ch.Close(err)
 }
 
 func (th *svrTransHandler) OnRead(ch *channel.Channel, msg interface{}) error {
@@ -164,7 +153,7 @@ func (th *svrTransHandler) OnRead(ch *channel.Channel, msg interface{}) error {
 
 func (th *svrTransHandler) OnWrite(ch *channel.Channel, msg interface{}) error {
 	defer recovery.Recover(func(err error) {
-		th.closeChannel(context.Background(), ch, err)
+		ch.Close(err)
 	})
 
 	if serving != atomic.LoadInt32(&th.state) {
@@ -174,38 +163,26 @@ func (th *svrTransHandler) OnWrite(ch *channel.Channel, msg interface{}) error {
 	if err != nil {
 		return err
 	}
-	defer writer.Release()
-	// do encode
-	return th.ops.packetCodec.Encode(msg, writer, th.ops.payloadCodec)
-}
-
-func (th *svrTransHandler) Close(ctx context.Context, _ error) error {
-
-	if !atomic.CompareAndSwapInt32(&th.state, serving, closed) {
-		return nil
+	writer.Release()
+	if err := th.ops.packetCodec.Encode(msg, writer, th.ops.payloadCodec); err != nil {
+		return err
 	}
-	th.closingCtx = ctx
+	writer.Flush()
+	writer.Release()
 	return nil
 }
 
-func (th *svrTransHandler) closeChannel(ctx context.Context, ch *channel.Channel, err error) {
-	var v interface{}
-	ok := false
-	if v, ok = th.channels.LoadAndDelete(ch); !ok {
-		return
+func (th *svrTransHandler) Close() error {
+	if !atomic.CompareAndSwapInt32(&th.state, serving, closed) {
+		return nil
 	}
-	if v != nil {
-		if closer, ok := v.(interface{ Close() }); ok {
-			closer.Close()
-		}
-	}
+	return nil
+}
+
+func (th *svrTransHandler) closeChannel() {
 	th.channelCount.Dec()
-	_ = ch.Close(ctx, err)
 }
 
 func (th *svrTransHandler) isActive() bool {
-	if serving != atomic.LoadInt32(&th.state) {
-		return false
-	}
-	return true
+	return serving == atomic.LoadInt32(&th.state)
 }

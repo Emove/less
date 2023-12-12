@@ -38,7 +38,7 @@ func TestServer_Run(t *testing.T) {
 	}()
 
 	wg.Wait()
-	server.Shutdown()
+	server.Shutdown(context.Background(), nil)
 }
 
 func mockClient(t *testing.T) {

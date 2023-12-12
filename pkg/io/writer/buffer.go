@@ -21,7 +21,7 @@ func WrapBufferWriter(decorator less_io.Writer) less_io.Writer {
 	}
 }
 
-// NewBufferWriter data will be wrote to decorator when Flush called
+// NewBufferWriter data will be written to decorator when Flush called
 func NewBufferWriter(decorator io.Writer) less_io.Writer {
 	return &writer{
 		decorator:     decorator,
