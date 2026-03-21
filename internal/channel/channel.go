@@ -112,6 +112,11 @@ func (ch *Channel) AddOutboundMiddleware(mw ...less.Middleware) {
 	ch.pl.AddOutbound(mw...)
 }
 
+// SetOutboundHandler sets the outbound handler for this channel's pipeline
+func (ch *Channel) SetOutboundHandler(h less.Handler) {
+	ch.pl.SetOutboundHandler(h)
+}
+
 // ====================================== implements stater ============================================ //
 
 func (ch *Channel) Channel() *Channel {
