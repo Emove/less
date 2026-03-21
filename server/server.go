@@ -60,16 +60,9 @@ func (srv *Server) Run() {
 	srv.handler = engine.NewSrvTransHandler(srv.ctx, srv.ops.transOptions...)
 
 	go func() {
-		switch srv.ops.transport.(type) {
-		case transport.DefaultTransport:
-			//_transport := srv.ops.transport.(transport.DefaultTransport)
-			//err := _transport.Listen(srv.addr, srv.handler)
-			//if err != nil {
-			//	srv.Shutdown()
-			//	log.Fatalf("less exits because err: %v", err)
-			//}
+		if err := srv.ops.transport.Listen(srv.addr, srv.handler); err != nil {
+			srv.Shutdown(context.Background(), err)
 		}
-
 	}()
 }
 
@@ -83,7 +76,7 @@ func (srv *Server) Shutdown(ctx context.Context, err error) {
 			hook(ctx, err)
 		}
 	}
-	_ = srv.ops.transport.Close(context.Background(), err)
+	srv.ops.transport.Close()
 	srv.cancelFunc()
 	select {
 	case <-srv.ctx.Done():
