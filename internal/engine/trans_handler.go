@@ -124,7 +124,13 @@ func (th *svrTransHandler) OnMessage(ctx context.Context, _ transport.Connection
 		ch.Close(err)
 	})
 
-	msg, err := th.ops.packetCodec.Decode(reader, th.ops.payloadCodec)
+	payload, err := th.ops.packetCodec.Decode(reader)
+	if err != nil {
+		ch.Close(err)
+		return err
+	}
+
+	msg, err := th.ops.payloadCodec.Unmarshal(payload)
 	if err != nil {
 		ch.Close(err)
 		return err
@@ -163,12 +169,17 @@ func (th *svrTransHandler) OnWrite(ch *channel.Channel, msg interface{}) error {
 	if err != nil {
 		return err
 	}
-	writer.Release()
-	if err := th.ops.packetCodec.Encode(msg, writer, th.ops.payloadCodec); err != nil {
+	defer writer.Release()
+
+	payload, err := th.ops.payloadCodec.Marshal(msg)
+	if err != nil {
 		return err
 	}
-	writer.Flush()
-	writer.Release()
+
+	if err := th.ops.packetCodec.Encode(payload, writer); err != nil {
+		return err
+	}
+
 	return nil
 }
 

@@ -1,11 +1,12 @@
 package packet
 
 import (
+	"errors"
 	"github.com/emove/less/codec"
 	"github.com/emove/less/io"
-	ior "github.com/emove/less/io/reader"
-	iow "github.com/emove/less/io/writer"
 )
+
+var ErrPayloadExceedsFixedLength = errors.New("payload size exceeds fixed length")
 
 // NewFixedLengthCodec returns a fixed length packet codec
 func NewFixedLengthCodec(length uint32) codec.PacketCodec {
@@ -22,24 +23,21 @@ func (*fixedLengthCodec) Name() string {
 	return "fixed-length-packet-codec"
 }
 
-func (c *fixedLengthCodec) Encode(message interface{}, writer io.Writer, payloadCodec codec.PayloadCodec) (err error) {
+func (c *fixedLengthCodec) Encode(payload []byte, writer io.Writer) error {
+	if uint32(len(payload)) > c.length {
+		return ErrPayloadExceedsFixedLength
+	}
 
-	// allocate a fixed length buffer
 	buf, err := writer.Malloc(int(c.length))
 	if err != nil {
 		return err
 	}
-	bufWriter := iow.NewBufferWriterWithBuff(buf)
-	if err = payloadCodec.Marshal(message, bufWriter); err != nil {
-		return err
-	}
+
+	copy(buf, payload)
 
 	return writer.Flush()
 }
 
-func (c *fixedLengthCodec) Decode(reader io.Reader, payloadCodec codec.PayloadCodec) (message interface{}, err error) {
-	limitReader := ior.NewLimitReader(reader, c.length)
-	defer limitReader.Release()
-
-	return payloadCodec.UnMarshal(limitReader)
+func (c *fixedLengthCodec) Decode(reader io.Reader) ([]byte, error) {
+	return reader.Next(int(c.length))
 }

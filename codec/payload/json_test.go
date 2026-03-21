@@ -1,12 +1,7 @@
 package payload
 
 import (
-	"bytes"
 	"encoding/json"
-	"github.com/emove/less/codec"
-	"github.com/emove/less/io"
-	"github.com/emove/less/io/reader"
-	"github.com/emove/less/io/writer"
 	"reflect"
 	"testing"
 )
@@ -48,70 +43,58 @@ func BenchmarkJSONUnMarshalByNew(b *testing.B) {
 		msg := reflect.New(t).Interface()
 		_ = json.Unmarshal(jsonBytes, msg)
 	}
-
-	//msg := reflect.New(t).Interface()
-	//_ = json.Unmarshal(jsonBytes, msg)
-	//fmt.Printf("%v\n", msg)
 }
 
 func Test_jsonPayloadCodec_Marshal(t *testing.T) {
 	msg := &MyStruct{}
 	_ = json.Unmarshal(jsonBytes, msg)
-	buff := &bytes.Buffer{}
-	type args struct {
-		message interface{}
-		writer  io.Writer
-	}
 	tests := []struct {
 		name    string
-		codec   codec.PayloadCodec
-		args    args
+		codec   *jsonPayloadCodec
+		message interface{}
 		wantErr bool
 	}{
 		{
 			name:    "first",
-			codec:   NewJSONCodec(),
-			args:    args{message: msg, writer: writer.NewBufferWriter(buff)},
+			codec:   NewJSONCodec().(*jsonPayloadCodec),
+			message: msg,
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.codec.Marshal(tt.args.message, tt.args.writer); (err != nil) != tt.wantErr {
+			got, err := tt.codec.Marshal(tt.message)
+			if (err != nil) != tt.wantErr {
 				t.Errorf("Marshal() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			_ = tt.args.writer.Flush()
-			if !reflect.DeepEqual(buff.Bytes(), jsonBytes) {
-				t.Errorf("Marshal err, want: %s, got: %s", string(jsonBytes), buff.String())
+			if !reflect.DeepEqual(got, jsonBytes) {
+				t.Errorf("Marshal err, want: %s, got: %s", string(jsonBytes), string(got))
 			}
 		})
 	}
 }
 
-func Test_jsonPayloadCodec_UnMarshal(t *testing.T) {
+func Test_jsonPayloadCodec_Unmarshal(t *testing.T) {
 	msg := &MyStruct{}
 	_ = json.Unmarshal(jsonBytes, msg)
-	type args struct {
-		reader io.Reader
-	}
 	tests := []struct {
 		name        string
-		codec       codec.PayloadCodec
-		args        args
+		codec       *jsonPayloadCodec
+		payload     []byte
 		wantMessage interface{}
 		wantErr     bool
 	}{
 		{
 			name:        "byType",
-			codec:       NewJSONCodecWithType(MyStruct{}),
-			args:        args{reader: reader.NewLimitReader(reader.NewBufferReader(bytes.NewReader(jsonBytes)), uint32(len(jsonBytes)))},
+			codec:       NewJSONCodecWithType(MyStruct{}).(*jsonPayloadCodec),
+			payload:     jsonBytes,
 			wantMessage: msg,
 			wantErr:     false,
 		},
 		{
-			name:  "byMap",
-			codec: NewJSONCodec(),
-			args:  args{reader: reader.NewLimitReader(reader.NewBufferReader(bytes.NewReader(jsonBytes)), uint32(len(jsonBytes)))},
+			name:    "byMap",
+			codec:   NewJSONCodec().(*jsonPayloadCodec),
+			payload: jsonBytes,
 			wantMessage: map[string]interface{}{
 				"id": 1, "name": "jason", "gender": "male", "score": 100,
 			},
@@ -120,22 +103,21 @@ func Test_jsonPayloadCodec_UnMarshal(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotMessage, err := tt.codec.UnMarshal(tt.args.reader)
+			gotMessage, err := tt.codec.Unmarshal(tt.payload)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("UnMarshal() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(gotMessage, tt.wantMessage) {
 				m1, o1 := gotMessage.(map[string]interface{})
 				m2, o2 := tt.wantMessage.(map[string]interface{})
 				if !o1 || !o2 {
-					t.Errorf("UnMarshal() gotMessage = %v, want %v", gotMessage, tt.wantMessage)
+					t.Errorf("Unmarshal() gotMessage = %v, want %v", gotMessage, tt.wantMessage)
 				}
 				if o1 && o2 && !isMapEq(m1, m2) {
-					t.Errorf("UnMarshal() gotMessage = %v, want %v", gotMessage, tt.wantMessage)
+					t.Errorf("Unmarshal() gotMessage = %v, want %v", gotMessage, tt.wantMessage)
 				}
 			}
-			//t.Logf("%v", gotMessage)
 		})
 	}
 }
@@ -174,13 +156,6 @@ func isMapEq(m1, m2 map[string]interface{}) bool {
 	if len(m1) != len(m2) {
 		return false
 	}
-	//for k1, v1 := range m1 {
-	//	if v2, ok := m2[k1]; !ok || !reflect.DeepEqual(v1, v2) {
-	//		fmt.Printf("v1: %v, v2: %v", v1, v2)
-	//		return false
-	//	}
-	//}
-	//return true
 	marshal1, _ := json.Marshal(m1)
 	marshal2, _ := json.Marshal(m2)
 	return string(marshal1) == string(marshal2)
