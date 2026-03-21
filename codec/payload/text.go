@@ -3,7 +3,7 @@ package payload
 import (
 	"errors"
 	"github.com/emove/less/codec"
-	"github.com/emove/less/pkg/io"
+	"github.com/emove/less/io"
 )
 
 var ErrMessageNotString = errors.New("message can not convert to string")

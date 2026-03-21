@@ -1,12 +1,12 @@
 package writer
 
 import (
-	"github.com/emove/less/internal/errors"
-	less_io "github.com/emove/less/pkg/io"
+	"fmt"
+	less_io "github.com/emove/less/io"
 	"io"
 )
 
-var ErrWriterBufferNotEnough = errors.New("residual buffer not enough")
+var ErrWriterBufferNotEnough = fmt.Errorf("residual buffer not enough")
 
 const defaultBufferSize = 1 << 8
 

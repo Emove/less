@@ -5,7 +5,7 @@ import (
 	"errors"
 	"github.com/emove/less"
 	"github.com/emove/less/log"
-	"github.com/emove/less/pkg/io"
+	"github.com/emove/less/io"
 	"github.com/emove/less/transport"
 	"net"
 	"sync/atomic"

@@ -2,9 +2,9 @@ package payload
 
 import (
 	"bytes"
-	"github.com/emove/less/pkg/io"
-	"github.com/emove/less/pkg/io/reader"
-	"github.com/emove/less/pkg/io/writer"
+	"github.com/emove/less/io"
+	"github.com/emove/less/io/reader"
+	"github.com/emove/less/io/writer"
 	"reflect"
 	"testing"
 )

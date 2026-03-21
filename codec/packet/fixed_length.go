@@ -2,9 +2,9 @@ package packet
 
 import (
 	"github.com/emove/less/codec"
-	"github.com/emove/less/pkg/io"
-	ior "github.com/emove/less/pkg/io/reader"
-	iow "github.com/emove/less/pkg/io/writer"
+	"github.com/emove/less/io"
+	ior "github.com/emove/less/io/reader"
+	iow "github.com/emove/less/io/writer"
 )
 
 // NewFixedLengthCodec returns a fixed length packet codec

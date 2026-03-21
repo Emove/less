@@ -1,7 +1,7 @@
 package writer
 
 import (
-	"github.com/emove/less/pkg/io"
+	"github.com/emove/less/io"
 	"reflect"
 	"testing"
 )

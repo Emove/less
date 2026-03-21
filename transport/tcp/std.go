@@ -5,9 +5,9 @@ import (
 	"net"
 	"sync/atomic"
 
-	"github.com/emove/less/pkg/io"
-	"github.com/emove/less/pkg/io/reader"
-	"github.com/emove/less/pkg/io/writer"
+	"github.com/emove/less/io"
+	"github.com/emove/less/io/reader"
+	"github.com/emove/less/io/writer"
 	trans "github.com/emove/less/transport"
 )
 

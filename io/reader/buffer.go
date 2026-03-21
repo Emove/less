@@ -1,8 +1,8 @@
 package reader
 
 import (
-	"github.com/emove/less/internal/errors"
-	less_io "github.com/emove/less/pkg/io"
+	"fmt"
+	less_io "github.com/emove/less/io"
 	"sync"
 	"time"
 
@@ -140,7 +140,7 @@ func (r *bufferReader) ensureReadable(n int, buff []byte) (err error) {
 	want := n - readable
 	remain := len(r.buff) - r.writeIndex
 	if !r.growable && remain < want {
-		return errors.New("given buffer not enough, remain: %d, need: %d", remain, want)
+		return fmt.Errorf("given buffer not enough, remain: %d, need: %d", remain, want)
 	}
 
 	if remain < want {

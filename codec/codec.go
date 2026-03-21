@@ -1,7 +1,7 @@
 package codec
 
 import (
-	"github.com/emove/less/pkg/io"
+	"github.com/emove/less/io"
 )
 
 type PacketCodec interface {

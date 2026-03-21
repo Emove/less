@@ -5,9 +5,9 @@ import (
 	"encoding/binary"
 	"github.com/emove/less/codec"
 	"github.com/emove/less/codec/payload"
-	"github.com/emove/less/pkg/io"
-	reader2 "github.com/emove/less/pkg/io/reader"
-	"github.com/emove/less/pkg/io/writer"
+	"github.com/emove/less/io"
+	reader2 "github.com/emove/less/io/reader"
+	"github.com/emove/less/io/writer"
 	"reflect"
 	"testing"
 )

@@ -3,9 +3,9 @@ package packet
 import (
 	"encoding/binary"
 	"github.com/emove/less/codec"
-	"github.com/emove/less/pkg/io"
-	ior "github.com/emove/less/pkg/io/reader"
-	iow "github.com/emove/less/pkg/io/writer"
+	"github.com/emove/less/io"
+	ior "github.com/emove/less/io/reader"
+	iow "github.com/emove/less/io/writer"
 )
 
 // NewVariableLengthCodec returns a variable length packet codec

@@ -3,8 +3,8 @@ package packet
 import (
 	"errors"
 	"github.com/emove/less/codec"
-	"github.com/emove/less/pkg/io"
-	ior "github.com/emove/less/pkg/io/reader"
+	"github.com/emove/less/io"
+	ior "github.com/emove/less/io/reader"
 )
 
 var ErrMsgSizeGreaterThanMaxLength = errors.New("message package size greater than max length")

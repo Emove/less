@@ -3,7 +3,7 @@ package payload
 import (
 	"encoding/json"
 	"github.com/emove/less/codec"
-	"github.com/emove/less/pkg/io"
+	"github.com/emove/less/io"
 	"reflect"
 )
 
