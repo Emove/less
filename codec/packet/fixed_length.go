@@ -3,7 +3,6 @@ package packet
 import (
 	"errors"
 	"github.com/emove/less/codec"
-	"github.com/emove/less/io"
 )
 
 var ErrPayloadExceedsFixedLength = errors.New("payload size exceeds fixed length")
@@ -23,8 +22,9 @@ func (*fixedLengthCodec) Name() string {
 	return "fixed-length-packet-codec"
 }
 
-func (c *fixedLengthCodec) Encode(payload []byte, writer io.Writer) error {
-	if uint32(len(payload)) > c.length {
+func (c *fixedLengthCodec) Encode(writer codec.WriterBuffer, payload codec.Frame) error {
+	body := payload.Bytes()
+	if uint32(len(body)) > c.length {
 		return ErrPayloadExceedsFixedLength
 	}
 
@@ -33,11 +33,10 @@ func (c *fixedLengthCodec) Encode(payload []byte, writer io.Writer) error {
 		return err
 	}
 
-	copy(buf, payload)
-
-	return writer.Flush()
+	copy(buf, body)
+	return nil
 }
 
-func (c *fixedLengthCodec) Decode(reader io.Reader) ([]byte, error) {
-	return reader.Next(int(c.length))
+func (c *fixedLengthCodec) Decode(reader codec.ReaderBuffer) (codec.Frame, error) {
+	return reader.Slice(int(c.length))
 }

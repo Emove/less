@@ -1,17 +1,40 @@
 package codec
 
-import (
-	"github.com/emove/less/io"
-)
+import "io"
+
+type Frame interface {
+	Bytes() []byte
+	Retain()
+	Release()
+}
+
+type ReaderBuffer interface {
+	Peek(n int) ([]byte, error)
+	Next(n int) ([]byte, error)
+	Skip(n int) error
+	Slice(n int) (Frame, error)
+	Len() int
+	Release()
+}
+
+type WriterBuffer interface {
+	Malloc(n int) ([]byte, error)
+	WriteBinary(p []byte) error
+	WriteFrame(f Frame) error
+	Append(src WriterBuffer) error
+	Len() int
+	FlushTo(dst io.Writer) error
+	Release()
+}
 
 type PacketCodec interface {
 	Name() string
-	Encode(payload []byte, writer io.Writer) error
-	Decode(reader io.Reader) (payload []byte, err error)
+	Encode(dst WriterBuffer, payload Frame) error
+	Decode(src ReaderBuffer) (payload Frame, err error)
 }
 
 type PayloadCodec interface {
 	Name() string
-	Marshal(message any) ([]byte, error)
-	Unmarshal(payload []byte) (any, error)
+	Marshal(message any) (Frame, error)
+	Unmarshal(payload Frame) (any, error)
 }

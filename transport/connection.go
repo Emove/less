@@ -2,8 +2,6 @@ package transport
 
 import (
 	"net"
-
-	"github.com/emove/less/io"
 )
 
 const (
@@ -19,12 +17,7 @@ type Connection interface {
 	// SetContext(ctx context.Context)
 
 	Read(buf []byte) (n int, err error)
-
-	// Reader returns a Reader with buffer size limit.
-	Reader() io.Reader
-
-	// Writer returns a Writer.
-	Writer() io.Writer
+	Write(buf []byte) (n int, err error)
 
 	// IsActive returns false only when Connection closed.
 	IsActive() bool

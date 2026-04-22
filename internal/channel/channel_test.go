@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/emove/less"
-	"github.com/emove/less/io"
 )
 
 // mockAddr implements net.Addr for testing.
@@ -25,8 +24,7 @@ type mockConn struct {
 }
 
 func (m *mockConn) Read(buf []byte) (int, error) { return 0, nil }
-func (m *mockConn) Reader() io.Reader            { return nil }
-func (m *mockConn) Writer() io.Writer            { return nil }
+func (m *mockConn) Write(buf []byte) (int, error) { return len(buf), nil }
 func (m *mockConn) IsActive() bool               { return atomic.LoadInt32(&m.active) == 0 }
 func (m *mockConn) Close() error {
 	atomic.AddInt32(&m.closeCount, 1)

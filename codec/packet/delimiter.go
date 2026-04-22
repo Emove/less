@@ -1,9 +1,9 @@
 package packet
 
 import (
+	"bytes"
 	"errors"
 	"github.com/emove/less/codec"
-	"github.com/emove/less/io"
 )
 
 var ErrMsgSizeGreaterThanMaxLength = errors.New("message package size greater than max length")
@@ -55,24 +55,25 @@ func (dc *delimiterCodec) Name() string {
 	return "delimiter-packet-codec"
 }
 
-func (dc *delimiterCodec) Encode(payload []byte, writer io.Writer) error {
+func (dc *delimiterCodec) Encode(writer codec.WriterBuffer, payload codec.Frame) error {
+	body := payload.Bytes()
 
 	// write payload
-	if _, err := writer.Write(payload); err != nil {
+	if err := writer.WriteBinary(body); err != nil {
 		return err
 	}
 
 	// append delimiter
 	if dc.autoAppendDelimiter {
-		if _, err := writer.Write(dc.delimiter); err != nil {
+		if err := writer.WriteBinary(dc.delimiter); err != nil {
 			return err
 		}
 	}
 
-	return writer.Flush()
+	return nil
 }
 
-func (dc *delimiterCodec) Decode(reader io.Reader) ([]byte, error) {
+func (dc *delimiterCodec) Decode(reader codec.ReaderBuffer) (codec.Frame, error) {
 
 	var peek []byte
 	var err error
@@ -82,7 +83,7 @@ func (dc *delimiterCodec) Decode(reader io.Reader) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if len(peek) >= dc.delimiterLength && string(peek[length-dc.delimiterLength:]) == string(dc.delimiter) {
+		if len(peek) >= dc.delimiterLength && bytes.Equal(peek[length-dc.delimiterLength:], dc.delimiter) {
 			found = true
 		}
 	}
@@ -97,7 +98,7 @@ func (dc *delimiterCodec) Decode(reader io.Reader) ([]byte, error) {
 		bodyLength -= dc.delimiterLength
 	}
 
-	body, err := reader.Next(bodyLength)
+	body, err := reader.Slice(bodyLength)
 	if err != nil {
 		return nil, err
 	}

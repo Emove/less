@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"github.com/emove/less"
-	"github.com/emove/less/io"
 	"github.com/emove/less/log"
 	"github.com/emove/less/transport"
 	"net"
@@ -18,11 +17,7 @@ const (
 	readWriteMode
 )
 
-var (
-	ErrChannelClosed       = errors.New("channel has been closed")
-	ErrChannelReaderClosed = errors.New("channel reader has been closed")
-	ErrChannelWriterClosed = errors.New("channel writer has been closed")
-)
+var ErrChannelWriterClosed = errors.New("channel has been closed")
 
 var _ less.Channel = (*Channel)(nil)
 
@@ -72,22 +67,6 @@ func (ch *Channel) Write(msg interface{}) error {
 
 func (ch *Channel) IsActive() bool {
 	return atomic.LoadInt32(&ch.state)&readWriteMode != 0 && ch.conn.IsActive()
-}
-
-func (ch *Channel) CloseReader() {
-	ch.close(readable)
-}
-
-func (ch *Channel) CloseWriter() {
-	ch.close(writeable)
-}
-
-func (ch *Channel) Readable() bool {
-	return ch.calState(readable)
-}
-
-func (ch *Channel) Writeable() bool {
-	return ch.calState(writeable)
 }
 
 func (ch *Channel) Close(err error) {
@@ -140,22 +119,6 @@ func (ch *Channel) LastWrite() int64 {
 	return atomic.LoadInt64(&ch.lastWrite)
 }
 
-// ====================================== internal functions ============================================ //
-
-func (ch *Channel) Reader() (io.Reader, error) {
-	if !ch.calState(readable) {
-		return nil, ErrChannelReaderClosed
-	}
-	return ch.conn.Reader(), nil
-}
-
-func (ch *Channel) Writer() (io.Writer, error) {
-	if !ch.calState(writeable) {
-		return nil, ErrChannelWriterClosed
-	}
-	return ch.conn.Writer(), nil
-}
-
 func (ch *Channel) SetContext(ctx context.Context) {
 	ch.ctx = ctx
 }
@@ -177,17 +140,8 @@ func (ch *Channel) Side() int {
 	return ch.side
 }
 
-func (ch *Channel) close(state int32) {
-	for {
-		old := atomic.LoadInt32(&ch.state)
-		if old&state == state {
-			if atomic.CompareAndSwapInt32(&ch.state, old, old^state) {
-				return
-			}
-		} else {
-			return
-		}
-	}
+func (ch *Channel) Conn() transport.Connection {
+	return ch.conn
 }
 
 func (ch *Channel) calState(state int32) bool {

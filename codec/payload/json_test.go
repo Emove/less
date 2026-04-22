@@ -2,6 +2,7 @@ package payload
 
 import (
 	"encoding/json"
+	"github.com/emove/less/internal/engine/framebuf"
 	"reflect"
 	"testing"
 )
@@ -45,80 +46,41 @@ func BenchmarkJSONUnMarshalByNew(b *testing.B) {
 	}
 }
 
-func Test_jsonPayloadCodec_Marshal(t *testing.T) {
+func TestJSONCodec_MarshalReturnsFrame(t *testing.T) {
 	msg := &MyStruct{}
 	_ = json.Unmarshal(jsonBytes, msg)
-	tests := []struct {
-		name    string
-		codec   *jsonPayloadCodec
-		message interface{}
-		wantErr bool
-	}{
-		{
-			name:    "first",
-			codec:   NewJSONCodec().(*jsonPayloadCodec),
-			message: msg,
-			wantErr: false,
-		},
+
+	codec := NewJSONCodec().(*jsonPayloadCodec)
+	got, err := codec.Marshal(msg)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := tt.codec.Marshal(tt.message)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Marshal() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if !reflect.DeepEqual(got, jsonBytes) {
-				t.Errorf("Marshal err, want: %s, got: %s", string(jsonBytes), string(got))
-			}
-		})
+
+	frame, ok := any(got).(framebuf.Frame)
+	if !ok {
+		t.Fatalf("Marshal() returned %T, want frame with Bytes() []byte", got)
+	}
+
+	if !reflect.DeepEqual(frame.Bytes(), jsonBytes) {
+		t.Fatalf("Marshal() frame bytes = %s, want %s", string(frame.Bytes()), string(jsonBytes))
 	}
 }
 
-func Test_jsonPayloadCodec_Unmarshal(t *testing.T) {
-	msg := &MyStruct{}
-	_ = json.Unmarshal(jsonBytes, msg)
-	tests := []struct {
-		name        string
-		codec       *jsonPayloadCodec
-		payload     []byte
-		wantMessage interface{}
-		wantErr     bool
-	}{
-		{
-			name:        "byType",
-			codec:       NewJSONCodecWithType(MyStruct{}).(*jsonPayloadCodec),
-			payload:     jsonBytes,
-			wantMessage: msg,
-			wantErr:     false,
-		},
-		{
-			name:    "byMap",
-			codec:   NewJSONCodec().(*jsonPayloadCodec),
-			payload: jsonBytes,
-			wantMessage: map[string]interface{}{
-				"id": 1, "name": "jason", "gender": "male", "score": 100,
-			},
-			wantErr: false,
-		},
+func TestJSONCodec_UnmarshalConsumesFrame(t *testing.T) {
+	codec := NewJSONCodecWithType(MyStruct{}).(*jsonPayloadCodec)
+
+	frame := framebuf.NewFrame(append([]byte(nil), jsonBytes...))
+	defer frame.Release()
+	gotMessage, err := codec.Unmarshal(frame)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotMessage, err := tt.codec.Unmarshal(tt.payload)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(gotMessage, tt.wantMessage) {
-				m1, o1 := gotMessage.(map[string]interface{})
-				m2, o2 := tt.wantMessage.(map[string]interface{})
-				if !o1 || !o2 {
-					t.Errorf("Unmarshal() gotMessage = %v, want %v", gotMessage, tt.wantMessage)
-				}
-				if o1 && o2 && !isMapEq(m1, m2) {
-					t.Errorf("Unmarshal() gotMessage = %v, want %v", gotMessage, tt.wantMessage)
-				}
-			}
-		})
+
+	want := &MyStruct{}
+	_ = json.Unmarshal(jsonBytes, want)
+
+	if !reflect.DeepEqual(gotMessage, want) {
+		t.Fatalf("Unmarshal() gotMessage = %v, want %v", gotMessage, want)
 	}
 }
 
@@ -150,13 +112,4 @@ func Test_parseType(t *testing.T) {
 			}
 		})
 	}
-}
-
-func isMapEq(m1, m2 map[string]interface{}) bool {
-	if len(m1) != len(m2) {
-		return false
-	}
-	marshal1, _ := json.Marshal(m1)
-	marshal2, _ := json.Marshal(m2)
-	return string(marshal1) == string(marshal2)
 }

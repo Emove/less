@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"github.com/emove/less"
-	"github.com/emove/less/io"
+	stdio "io"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -63,14 +63,14 @@ func mockClient(t *testing.T) {
 
 	header = make([]byte, binary.MaxVarintLen32)
 
-	if _, err = con.Read(header); err != nil {
+	if _, err = stdio.ReadFull(con, header); err != nil {
 		t.Fatalf("client read msg header err: %v\n", err)
 	}
 
 	length := binary.BigEndian.Uint32(header)
 	body := make([]byte, length, length)
 
-	if _, err = con.Read(body); err != nil {
+	if _, err = stdio.ReadFull(con, body); err != nil {
 		t.Fatalf("client read msg body err: %v\n", err)
 	}
 
@@ -177,8 +177,7 @@ type shutdownConn struct {
 }
 
 func (c *shutdownConn) Read(buf []byte) (int, error) { return 0, nil }
-func (c *shutdownConn) Reader() io.Reader            { return nil }
-func (c *shutdownConn) Writer() io.Writer            { return nil }
+func (c *shutdownConn) Write(buf []byte) (int, error) { return len(buf), nil }
 func (c *shutdownConn) IsActive() bool               { return atomic.LoadInt32(&c.closed) == 0 }
 func (c *shutdownConn) Close() error {
 	atomic.StoreInt32(&c.closed, 1)

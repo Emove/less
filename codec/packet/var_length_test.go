@@ -3,47 +3,29 @@ package packet
 import (
 	"bytes"
 	"encoding/binary"
-	"github.com/emove/less/io"
-	reader2 "github.com/emove/less/io/reader"
-	"github.com/emove/less/io/writer"
+	"github.com/emove/less/codec"
+	"github.com/emove/less/internal/engine/framebuf"
 	"reflect"
 	"testing"
 )
 
-func TestVariableLengthCodec_Decode(t *testing.T) {
-	type args struct {
-		reader io.Reader
+func TestVariableLengthCodec_DecodeReturnsFrame(t *testing.T) {
+	va := &variableLengthCodec{}
+
+	gotPayload, err := va.Decode(reader([]byte("hello world")))
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
 	}
-	tests := []struct {
-		args        args
-		wantPayload []byte
-		wantErr     bool
-	}{
-		{
-			args:        args{reader: reader([]byte("hello world"))},
-			wantPayload: []byte("hello world"),
-			wantErr:     false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
-			va := &variableLengthCodec{}
-			gotPayload, err := va.Decode(tt.args.reader)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Decode() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(gotPayload, tt.wantPayload) {
-				t.Errorf("Decode() gotPayload = %v, want %v", gotPayload, tt.wantPayload)
-			}
-		})
+	defer gotPayload.Release()
+
+	if !reflect.DeepEqual(gotPayload.Bytes(), []byte("hello world")) {
+		t.Fatalf("Decode() frame bytes = %v, want %v", gotPayload.Bytes(), []byte("hello world"))
 	}
 }
 
 func TestVariableLengthCodec_Encode(t *testing.T) {
 	type args struct {
 		payload []byte
-		writer  io.Writer
 	}
 	buff := &bytes.Buffer{}
 	tests := []struct {
@@ -52,7 +34,7 @@ func TestVariableLengthCodec_Encode(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			args:    args{payload: []byte("hello world"), writer: writer.NewBufferWriter(buff)},
+			args:    args{payload: []byte("hello world")},
 			want:    "hello world",
 			wantErr: false,
 		},
@@ -60,8 +42,13 @@ func TestVariableLengthCodec_Encode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
 			va := &variableLengthCodec{}
-			if err := va.Encode(tt.args.payload, tt.args.writer); (err != nil) != tt.wantErr {
+			writer := framebuf.NewWriter()
+			if err := va.Encode(writer, framebuf.NewFrame(tt.args.payload)); (err != nil) != tt.wantErr {
 				t.Errorf("Encode() error = %v, wantErr %v", err, tt.wantErr)
+			} else if err == nil {
+				if flushErr := writer.FlushTo(buff); flushErr != nil {
+					t.Fatalf("FlushTo() error = %v", flushErr)
+				}
 			}
 			got := buff.Bytes()[binary.MaxVarintLen32:]
 			if string(got) != tt.want {
@@ -72,11 +59,11 @@ func TestVariableLengthCodec_Encode(t *testing.T) {
 	}
 }
 
-func reader(msg []byte) io.Reader {
+func reader(msg []byte) codec.ReaderBuffer {
 	buff := &bytes.Buffer{}
 	header := make([]byte, binary.MaxVarintLen32)
 	binary.BigEndian.PutUint32(header, uint32(len(msg)))
 	buff.Write(header)
 	buff.Write(msg)
-	return reader2.NewBufferReader(buff)
+	return framebuf.NewReader(buff)
 }

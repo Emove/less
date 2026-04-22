@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"reflect"
 	"testing"
 	"time"
 
@@ -211,35 +212,61 @@ func Test_connection_Read(t *testing.T) {
 	})
 }
 
-func Test_connection_Reader(t *testing.T) {
+func Test_connection_Write(t *testing.T) {
 	do(func(pair *connPair) {
-		content := []byte("hello server")
+		client := WrapConnection(pair.client)
+		method := reflect.ValueOf(client).MethodByName("Write")
+		if !method.IsValid() {
+			t.Fatalf("WrapConnection() does not expose Write([]byte)")
+		}
+		if method.Type().NumIn() != 1 {
+			t.Fatalf("Write() got %d inputs, want 1", method.Type().NumIn())
+		}
+		if method.Type().NumOut() != 1 && method.Type().NumOut() != 2 {
+			t.Fatalf("Write() got %d outputs, want 1 or 2", method.Type().NumOut())
+		}
+		errType := method.Type().Out(method.Type().NumOut() - 1)
+		if !errType.Implements(reflect.TypeOf((*error)(nil)).Elem()) {
+			t.Fatalf("Write() final output = %v, want error", errType)
+		}
 
-		server := WrapConnection(pair.server)
+		content := []byte("hello server")
+		argType := method.Type().In(0)
+		if !reflect.TypeOf(content).AssignableTo(argType) {
+			t.Fatalf("Write() parameter type = %v, want []byte-compatible input", argType)
+		}
+
+		writeDone := make(chan []reflect.Value, 1)
 		go func() {
-			if _, err := pair.client.Write(content); err != nil {
-				t.Errorf("write msg err: %v", err)
-			}
+			writeDone <- method.Call([]reflect.Value{reflect.ValueOf(content)})
 		}()
 
-		reader := server.Reader()
-		msg, err := reader.Peek(len(content))
-		if err != nil {
-			t.Fatalf("read peek err: %v", err)
+		buf := make([]byte, len(content))
+		if err := pair.server.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+			t.Fatalf("set read deadline: %v", err)
 		}
-		t.Logf("read msg: %s", string(msg))
-
-		t.Log("skip 6 bytes")
-		err = reader.Skip(6)
-		if err != nil {
-			t.Fatalf("skip err: %v", err)
+		if _, err := pair.server.Read(buf); err != nil {
+			t.Fatalf("server read msg error: %v", err)
+		}
+		if err := pair.server.SetReadDeadline(time.Time{}); err != nil {
+			t.Fatalf("clear read deadline: %v", err)
 		}
 
-		msg, err = reader.Next(len(content) - 6)
-		if err != nil {
-			t.Fatalf("read next err: %v", err)
+		select {
+		case results := <-writeDone:
+			gotErr := results[len(results)-1].Interface()
+			if gotErr != nil {
+				err, ok := gotErr.(error)
+				if !ok {
+					t.Fatalf("Write() final result has dynamic type %T, want error", gotErr)
+				}
+				t.Fatalf("Write() error = %v", err)
+			}
+		case <-time.After(200 * time.Millisecond):
+			t.Fatal("Write() call did not complete")
 		}
-		t.Logf("read next: %s", string(msg))
+
+		t.Logf("server read msg: %s", string(buf))
 	})
 }
 
@@ -256,41 +283,21 @@ func Test_connection_SetReadTimeout(t *testing.T) {
 	// ignore
 }
 
-func Test_connection_Writer(t *testing.T) {
-	do(func(pair *connPair) {
-		client := WrapConnection(pair.client)
+func TestConnectionInterface_DoesNotExposeBufferedIO(t *testing.T) {
+	connType := reflect.TypeOf((*trans.Connection)(nil)).Elem()
 
-		content := []byte("hello server")
-
-		go func() {
-			writer := client.Writer()
-			_, err := writer.Write(content[:6])
-			if err != nil {
-				t.Errorf("client write 'hello ' error: %s", err.Error())
-				return
-			}
-			malloc, _ := writer.Malloc(6)
-			copy(malloc, content[6:])
-
-			if writer.MallocLength() != len(content) {
-				t.Errorf("write %d bytes to writer, but MallocLength got %d", len(content), writer.MallocLength())
-				return
-			}
-
-			if err = writer.Flush(); err != nil {
-				t.Errorf("writer flush error: %s", err.Error())
-				return
-			}
-		}()
-
-		buf := make([]byte, len(content))
-
-		_, err := pair.server.Read(buf)
-		if err != nil {
-			t.Fatalf("server read msg error: %s", err.Error())
-		}
-		t.Logf("server read msg: %s", string(buf))
-	})
+	if _, ok := connType.MethodByName("Reader"); ok {
+		t.Errorf("transport.Connection exposes Reader(), want Read() only")
+	}
+	if _, ok := connType.MethodByName("Writer"); ok {
+		t.Errorf("transport.Connection exposes Writer(), want Write() only")
+	}
+	if _, ok := connType.MethodByName("Read"); !ok {
+		t.Errorf("transport.Connection does not expose Read()")
+	}
+	if _, ok := connType.MethodByName("Write"); !ok {
+		t.Errorf("transport.Connection does not expose Write()")
+	}
 }
 
 func Test_transport_Close_StopsAcceptAndRejectsNewDials(t *testing.T) {

@@ -1,70 +1,40 @@
 package payload
 
 import (
+	"github.com/emove/less/internal/engine/framebuf"
 	"reflect"
 	"testing"
 )
 
-func TestTextPayloadCodec_Marshal(t *testing.T) {
-	tests := []struct {
-		message interface{}
-		want    []byte
-		wantErr bool
-	}{
-		{
-			message: "hello world",
-			want:    []byte("hello world"),
-			wantErr: false,
-		},
-		{
-			message: []byte("hello world"),
-			want:    []byte("hello world"),
-			wantErr: false,
-		},
-		{
-			message: 1,
-			want:    nil,
-			wantErr: true,
-		},
+func TestTextCodec_MarshalReturnsFrame(t *testing.T) {
+	te := &textPayloadCodec{}
+
+	got, err := te.Marshal("hello world")
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
 	}
-	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
-			te := &textPayloadCodec{}
-			got, err := te.Marshal(tt.message)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Marshal() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Marshal() want = %v, got = %v", tt.want, got)
-			}
-		})
+
+	frame, ok := any(got).(framebuf.Frame)
+	if !ok {
+		t.Fatalf("Marshal() returned %T, want frame with Bytes() []byte", got)
+	}
+
+	if !reflect.DeepEqual(frame.Bytes(), []byte("hello world")) {
+		t.Fatalf("Marshal() frame bytes = %v, want %v", frame.Bytes(), []byte("hello world"))
 	}
 }
 
-func TestTextPayloadCodec_Unmarshal(t *testing.T) {
-	tests := []struct {
-		payload     []byte
-		wantMessage interface{}
-		wantErr     bool
-	}{
-		{
-			payload:     []byte("hello world"),
-			wantMessage: "hello world",
-			wantErr:     false,
-		},
+func TestTextCodec_UnmarshalConsumesFrame(t *testing.T) {
+	te := &textPayloadCodec{}
+
+	frame := framebuf.NewFrame([]byte("hello world"))
+	defer frame.Release()
+	gotMessage, err := te.Unmarshal(frame)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
 	}
-	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
-			te := &textPayloadCodec{}
-			gotMessage, err := te.Unmarshal(tt.payload)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(gotMessage, tt.wantMessage) {
-				t.Errorf("Unmarshal() gotMessage = %v, want %v", gotMessage, tt.wantMessage)
-			}
-		})
+
+	if !reflect.DeepEqual(gotMessage, "hello world") {
+		t.Fatalf("Unmarshal() gotMessage = %v, want %v", gotMessage, "hello world")
 	}
 }

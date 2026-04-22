@@ -8,14 +8,21 @@ import (
 	"sync/atomic"
 
 	"github.com/emove/less"
+	"github.com/emove/less/codec"
 	less_atomic "github.com/emove/less/internal/atomic"
 	"github.com/emove/less/internal/channel"
+	"github.com/emove/less/internal/engine/framebuf"
 	"github.com/emove/less/internal/recovery"
 	"github.com/emove/less/log"
 	"github.com/emove/less/transport"
 )
 
 type ctxChannelKey struct{}
+type ctxResourcesKey struct{}
+
+type channelResources struct {
+	reader codec.ReaderBuffer
+}
 
 type TransHandler interface {
 	transport.EventDriver
@@ -109,7 +116,11 @@ func (th *svrTransHandler) OnConnect(ctx context.Context, con transport.Connecti
 		return ctx, errors.New("server has been shutdown")
 	}
 
-	return context.WithValue(ctx, ctxChannelKey{}, ch), nil
+	ctx = context.WithValue(ctx, ctxChannelKey{}, ch)
+	ctx = context.WithValue(ctx, ctxResourcesKey{}, &channelResources{
+		reader: framebuf.NewReader(con),
+	})
+	return ctx, nil
 }
 
 func (th *svrTransHandler) OnMessage(ctx context.Context, _ transport.Connection) error {
@@ -120,12 +131,11 @@ func (th *svrTransHandler) OnMessage(ctx context.Context, _ transport.Connection
 
 	ch := ctx.Value(ctxChannelKey{}).(*channel.Channel)
 
-	reader, err := ch.Reader()
-	if err != nil {
-		return nil
+	resources, ok := ctx.Value(ctxResourcesKey{}).(*channelResources)
+	if !ok || resources == nil || resources.reader == nil {
+		return errors.New("channel resources are missing")
 	}
-
-	defer reader.Release()
+	reader := resources.reader
 	if !th.isActive() {
 		return errors.New("transport was closed")
 	}
@@ -139,16 +149,17 @@ func (th *svrTransHandler) OnMessage(ctx context.Context, _ transport.Connection
 		ch.Close(err)
 		return err
 	}
+	defer payload.Release()
 
+	payloadSize := len(payload.Bytes())
 	msg, err := th.ops.payloadCodec.Unmarshal(payload)
 	if err != nil {
 		ch.Close(err)
 		return err
 	}
 
-	// TODO 改用limitWriter
-	if th.ops.maxReceiveMessageSize > 0 && uint32(reader.Length()) > th.ops.maxReceiveMessageSize {
-		log.Errorf("receive a message but message size greater than max-receive-message-size, message size: %d, max: %d", reader.Length(), th.ops.maxReceiveMessageSize)
+	if th.ops.maxReceiveMessageSize > 0 && uint32(payloadSize) > th.ops.maxReceiveMessageSize {
+		log.Errorf("receive a message but message size greater than max-receive-message-size, message size: %d, max: %d", payloadSize, th.ops.maxReceiveMessageSize)
 		return nil
 	}
 	return th.OnRead(ch, msg)
@@ -157,6 +168,9 @@ func (th *svrTransHandler) OnMessage(ctx context.Context, _ transport.Connection
 func (th *svrTransHandler) OnConnClosed(ctx context.Context, _ transport.Connection, err error) {
 	if ctx == nil {
 		return
+	}
+	if resources, ok := ctx.Value(ctxResourcesKey{}).(*channelResources); ok && resources != nil && resources.reader != nil {
+		resources.reader.Release()
 	}
 	value := ctx.Value(ctxChannelKey{})
 	if value == nil {
@@ -178,7 +192,7 @@ func (th *svrTransHandler) OnRead(ch *channel.Channel, msg interface{}) error {
 }
 
 func (th *svrTransHandler) newWriteHandler(conn transport.Connection) less.Handler {
-	return func(ctx context.Context, _ less.Channel, message interface{}) error {
+	return func(ctx context.Context, ch less.Channel, message interface{}) error {
 		if serving != atomic.LoadInt32(&th.state) {
 			return fmt.Errorf("transport has been closed")
 		}
@@ -186,12 +200,17 @@ func (th *svrTransHandler) newWriteHandler(conn transport.Connection) less.Handl
 		if err != nil {
 			return err
 		}
-		writer := conn.Writer()
+		defer payload.Release()
+		writer := framebuf.NewWriter()
 		defer writer.Release()
-		if err := th.ops.packetCodec.Encode(payload, writer); err != nil {
+		if err := th.ops.packetCodec.Encode(writer, payload); err != nil {
 			return err
 		}
-		return writer.Flush()
+		if err := writer.FlushTo(conn); err != nil {
+			ch.Close(err)
+			return err
+		}
+		return nil
 	}
 }
 
