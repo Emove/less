@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 
 	"github.com/emove/less"
@@ -23,9 +24,12 @@ type TransHandler interface {
 }
 
 func NewSrvTransHandler(ctx context.Context, ops ...Option) TransHandler {
-	opts := defaultTransOptions
+	opts := defaultTransOptions()
 	for _, op := range ops {
 		op(opts)
+	}
+	if opts.router == nil {
+		panic("router is required")
 	}
 	th := &svrTransHandler{
 		ops:          opts,
@@ -33,7 +37,7 @@ func NewSrvTransHandler(ctx context.Context, ops ...Option) TransHandler {
 		channelCount: less_atomic.AtomicInt64(0),
 	}
 	onChannelClosed := append([]less.OnChannelClosed{func(ctx context.Context, ch less.Channel, err error) {
-		th.closeChannel()
+		th.closeChannel(ch)
 	}}, th.ops.onChannelClosed...)
 
 	inbound := opts.inbound
@@ -60,6 +64,7 @@ type svrTransHandler struct {
 	ctx             context.Context
 	channelCount    less_atomic.AtomicInt64
 	pipelineFactory channel.PipelineFactory
+	channels        sync.Map
 }
 
 func (th *svrTransHandler) OnConnect(ctx context.Context, con transport.Connection) (c context.Context, err error) {
@@ -93,8 +98,15 @@ func (th *svrTransHandler) OnConnect(ctx context.Context, con transport.Connecti
 	ch.SetOutboundHandler(writeHandler)
 
 	if err = ch.Activate(ctx); err != nil {
+		th.channelCount.Dec()
 		log.Debugf("connect request from: %s failed, err: %v", con.RemoteAddr().String(), err)
 		return ctx, err
+	}
+
+	th.channels.Store(ch, struct{}{})
+	if !th.isActive() {
+		ch.Close(errors.New("server has been shutdown"))
+		return ctx, errors.New("server has been shutdown")
 	}
 
 	return context.WithValue(ctx, ctxChannelKey{}, ch), nil
@@ -143,7 +155,17 @@ func (th *svrTransHandler) OnMessage(ctx context.Context, _ transport.Connection
 }
 
 func (th *svrTransHandler) OnConnClosed(ctx context.Context, _ transport.Connection, err error) {
-	ch := ctx.Value(ctxChannelKey{}).(*channel.Channel)
+	if ctx == nil {
+		return
+	}
+	value := ctx.Value(ctxChannelKey{})
+	if value == nil {
+		return
+	}
+	ch, ok := value.(*channel.Channel)
+	if !ok {
+		return
+	}
 	ch.Close(err)
 }
 
@@ -177,11 +199,22 @@ func (th *svrTransHandler) Close() error {
 	if !atomic.CompareAndSwapInt32(&th.state, serving, closed) {
 		return nil
 	}
+
+	th.channels.Range(func(key, _ interface{}) bool {
+		key.(*channel.Channel).Close(errors.New("transport has been closed"))
+		return true
+	})
 	return nil
 }
 
-func (th *svrTransHandler) closeChannel() {
-	th.channelCount.Dec()
+func (th *svrTransHandler) closeChannel(ch less.Channel) {
+	internal, ok := ch.(*channel.Channel)
+	if !ok {
+		return
+	}
+	if _, loaded := th.channels.LoadAndDelete(internal); loaded {
+		th.channelCount.Dec()
+	}
 }
 
 func (th *svrTransHandler) isActive() bool {

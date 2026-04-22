@@ -1,11 +1,14 @@
 package tcp
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
 	"testing"
 	"time"
+
+	trans "github.com/emove/less/transport"
 )
 
 type connPair struct {
@@ -14,11 +17,16 @@ type connPair struct {
 }
 
 func prepare() (pair *connPair, err error) {
-	network, addr := "tcp", ":8080"
+	network, addr := "tcp", "127.0.0.1:0"
 	listen, err := net.Listen(network, addr)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		_ = listen.Close()
+	}()
+
+	addr = listen.Addr().String()
 
 	type clientCon struct {
 		client net.Conn
@@ -62,6 +70,47 @@ func prepare() (pair *connPair, err error) {
 		pair.client = cc.client
 		return
 	}
+}
+
+type noopEventDriver struct {
+	onConnect    func(context.Context, trans.Connection) (context.Context, error)
+	onMessage    func(context.Context, trans.Connection) error
+	onConnClosed func(context.Context, trans.Connection, error)
+}
+
+func (d noopEventDriver) OnConnect(ctx context.Context, conn trans.Connection) (context.Context, error) {
+	if d.onConnect != nil {
+		return d.onConnect(ctx, conn)
+	}
+	return ctx, nil
+}
+
+func (d noopEventDriver) OnMessage(ctx context.Context, conn trans.Connection) error {
+	if d.onMessage != nil {
+		return d.onMessage(ctx, conn)
+	}
+	time.Sleep(10 * time.Millisecond)
+	return nil
+}
+
+func (d noopEventDriver) OnConnClosed(ctx context.Context, conn trans.Connection, err error) {
+	if d.onConnClosed != nil {
+		d.onConnClosed(ctx, conn, err)
+	}
+}
+
+func reserveTCPAddr(t *testing.T) string {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve tcp addr: %v", err)
+	}
+	defer func() {
+		_ = listener.Close()
+	}()
+
+	return listener.Addr().String()
 }
 
 type fn func(pair *connPair)
@@ -242,4 +291,90 @@ func Test_connection_Writer(t *testing.T) {
 		}
 		t.Logf("server read msg: %s", string(buf))
 	})
+}
+
+func Test_transport_Close_StopsAcceptAndRejectsNewDials(t *testing.T) {
+	addr := reserveTCPAddr(t)
+	tr := New().(*transport)
+
+	listenErrCh := make(chan error, 1)
+	go func() {
+		listenErrCh <- tr.Listen(addr, noopEventDriver{})
+	}()
+
+	deadline := time.After(time.Second)
+	for {
+		conn, err := net.DialTimeout("tcp", addr, 20*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			break
+		}
+
+		select {
+		case <-deadline:
+			t.Fatalf("transport did not start listening on %s: %v", addr, err)
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	tr.Close()
+
+	select {
+	case err := <-listenErrCh:
+		if err != nil {
+			t.Fatalf("Listen returned unexpected error after Close: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Transport.Close() did not stop the accept loop")
+	}
+
+	conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
+	if err == nil {
+		_ = conn.Close()
+		t.Fatal("expected dial to fail after Transport.Close(), but it succeeded")
+	}
+}
+
+func TestNew_AppliesTCPOptions(t *testing.T) {
+	tr := New(
+		WithNetwork(TCP4),
+		WithTimeout(2*time.Second),
+		WithKeepalive(false),
+		WithKeepalivePeriod(3*time.Second),
+		WithLinger(7),
+		WithNoDelay(false),
+	).(*transport)
+
+	if tr.ops.Network != TCP4 {
+		t.Fatalf("Network = %q, want %q", tr.ops.Network, TCP4)
+	}
+	if tr.ops.Timeout != 2*time.Second {
+		t.Fatalf("Timeout = %v, want %v", tr.ops.Timeout, 2*time.Second)
+	}
+	if tr.ops.Keepalive {
+		t.Fatal("Keepalive = true, want false")
+	}
+	if tr.ops.KeepAlivePeriod != 3*time.Second {
+		t.Fatalf("KeepAlivePeriod = %v, want %v", tr.ops.KeepAlivePeriod, 3*time.Second)
+	}
+	if tr.ops.Linger != 7 {
+		t.Fatalf("Linger = %d, want %d", tr.ops.Linger, 7)
+	}
+	if tr.ops.NoDelay {
+		t.Fatal("NoDelay = true, want false")
+	}
+}
+
+func TestNew_ClonesDefaultOptionsPerTransport(t *testing.T) {
+	first := New(WithTimeout(0)).(*transport)
+	second := New().(*transport)
+
+	if first.ops == second.ops {
+		t.Fatal("expected New to clone TCP default options per transport")
+	}
+
+	if second.ops.Timeout != DefaultOptions.Timeout {
+		t.Fatalf("second transport Timeout = %v, want default %v", second.ops.Timeout, DefaultOptions.Timeout)
+	}
 }

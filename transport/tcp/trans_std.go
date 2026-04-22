@@ -2,8 +2,11 @@ package tcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/emove/less/internal/recovery"
@@ -12,26 +15,37 @@ import (
 )
 
 type transport struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	ops    *TCPOptions
+	ctx      context.Context
+	cancel   context.CancelFunc
+	ops      *TCPOptions
+	listener net.Listener
+	conns    sync.Map
+	closed   int32
+	mu       sync.Mutex
 }
 
 var _ trans.Transport = (*transport)(nil)
 
 func New(op ...trans.Option) trans.Transport {
-
-	ops := DefaultOptions
+	ops := cloneDefaultOptions()
 	for _, o := range op {
 		o(ops)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return &transport{
-		ops: ops,
+		ctx:    ctx,
+		cancel: cancel,
+		ops:    ops,
 	}
 }
 
 func (t *transport) Listen(addr string, driver trans.EventDriver) error {
+	if t.isClosed() {
+		return net.ErrClosed
+	}
+
 	tcpAddr, err := net.ResolveTCPAddr(t.ops.Network, addr)
 	if err != nil {
 		return err
@@ -40,15 +54,29 @@ func (t *transport) Listen(addr string, driver trans.EventDriver) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		_ = listener.Close()
+		t.clearListener(listener)
+	}()
+
+	t.mu.Lock()
+	if t.isClosed() {
+		t.mu.Unlock()
+		_ = listener.Close()
+		return nil
+	}
+	t.listener = listener
+	t.mu.Unlock()
 
 	log.Infof(fmt.Sprintf("transport listening, network: %s, address: %s", t.ops.Network, addr))
-
-	t.ctx, t.cancel = context.WithCancel(context.Background())
 
 	var con net.Conn
 	for {
 		con, err = listener.Accept()
 		if err != nil {
+			if t.isClosed() || errors.Is(err, net.ErrClosed) {
+				return nil
+			}
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
 				log.Errorf("tcp accept err: %v, retrying in 200 ms", err)
 				time.Sleep(200 * time.Millisecond)
@@ -67,8 +95,11 @@ func (t *transport) Listen(addr string, driver trans.EventDriver) error {
 
 		cc := context.Background()
 		wrapped := WrapConnection(con)
+		t.conns.Store(wrapped, struct{}{})
 		cc, err = driver.OnConnect(cc, wrapped)
 		if err != nil {
+			t.conns.Delete(wrapped)
+			_ = wrapped.Close()
 			continue
 		}
 
@@ -77,6 +108,10 @@ func (t *transport) Listen(addr string, driver trans.EventDriver) error {
 }
 
 func (t *transport) Dial(network, addr string, driver trans.EventDriver) error {
+	if t.isClosed() {
+		return net.ErrClosed
+	}
+
 	remoteAddr, err := net.ResolveTCPAddr(network, addr)
 	if err != nil {
 		return err
@@ -100,8 +135,11 @@ func (t *transport) Dial(network, addr string, driver trans.EventDriver) error {
 
 	cc := context.Background()
 	wrapped := WrapConnection(con)
+	t.conns.Store(wrapped, struct{}{})
 	if cc, err = driver.OnConnect(cc, wrapped); err != nil {
-		_ = con.Close()
+		t.conns.Delete(wrapped)
+		_ = wrapped.Close()
+		return err
 	}
 
 	go t.readLoop(cc, wrapped, driver)
@@ -109,25 +147,66 @@ func (t *transport) Dial(network, addr string, driver trans.EventDriver) error {
 }
 
 func (t *transport) Close() {
-	if t.cancel != nil {
-		t.cancel()
+	if !atomic.CompareAndSwapInt32(&t.closed, 0, 1) {
+		return
 	}
+	t.cancel()
+
+	t.mu.Lock()
+	listener := t.listener
+	t.listener = nil
+	t.mu.Unlock()
+	if listener != nil {
+		_ = listener.Close()
+	}
+
+	t.conns.Range(func(key, _ interface{}) bool {
+		conn := key.(trans.Connection)
+		t.conns.Delete(conn)
+		_ = conn.Close()
+		return true
+	})
 }
 
 func (t *transport) readLoop(ctx context.Context, conn trans.Connection, driver trans.EventDriver) {
-	recovery.Recover(func(err error) {
-		// trigger onConnClosed event
-		driver.OnConnClosed(ctx, conn, err)
-	})
+	var closeErr error
+	defer func() {
+		recovery.Recover(func(err error) {
+			closeErr = err
+		})
+		t.conns.Delete(conn)
+		_ = conn.Close()
+		driver.OnConnClosed(ctx, conn, closeErr)
+	}()
 
 	for {
+		if t.isClosed() || !conn.IsActive() {
+			return
+		}
+
+		if err := driver.OnMessage(ctx, conn); err != nil {
+			closeErr = err
+			return
+		}
+
 		select {
 		case <-t.ctx.Done():
 			return
 		default:
-			_ = driver.OnMessage(ctx, conn)
 		}
 	}
+}
+
+func (t *transport) clearListener(listener net.Listener) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.listener == listener {
+		t.listener = nil
+	}
+}
+
+func (t *transport) isClosed() bool {
+	return atomic.LoadInt32(&t.closed) == 1
 }
 
 func (t *transport) applyOptions(con *net.TCPConn, ops *TCPOptions) error {

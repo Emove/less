@@ -2,7 +2,6 @@ package channel
 
 import (
 	"context"
-	"sync"
 
 	"github.com/emove/less"
 )
@@ -10,16 +9,14 @@ import (
 // PipelineFactory is a factory to create Pipeline.
 type PipelineFactory func() *pipeline
 
-var pool = sync.Pool{}
-
 // NewPipelineFactory returns a pipeline factory.
 func NewPipelineFactory(
 	onChannel []less.OnChannel, onChannelClosed []less.OnChannelClosed,
 	inbound []less.Middleware, outbound []less.Middleware,
 	router less.Middleware, outboundHandler less.Handler,
 ) PipelineFactory {
-	pool.New = func() interface{} {
-		return &pipeline{
+	return func() *pipeline {
+		pl := &pipeline{
 			onChannelChain:       onChannel,
 			onChannelClosedChain: onChannelClosed,
 			inbound:              inbound,
@@ -27,9 +24,8 @@ func NewPipelineFactory(
 			router:               router,
 			outboundHandler:      outboundHandler,
 		}
-	}
-	return func() *pipeline {
-		pl := pool.Get().(*pipeline)
+		pl.compileInbound()
+		pl.compileOutbound()
 		return pl
 	}
 }
@@ -53,22 +49,15 @@ type pipeline struct {
 }
 
 func (pl *pipeline) OnRead(ch *Channel, msg interface{}) (err error) {
-	if pl.cachedInboundHandler == nil || pl.inboundDirty {
-		mws := less.Chain(less.Chain(pl.inbound...), less.Chain(pl.chIn...))
-		if pl.router != nil {
-			mws = less.Chain(mws, pl.router)
-		}
-		pl.cachedInboundHandler = mws(emptyHandler)
-		pl.inboundDirty = false
+	if pl.inboundDirty {
+		pl.compileInbound()
 	}
 	return pl.cachedInboundHandler(ch.Context(), ch, msg)
 }
 
 func (pl *pipeline) OnWrite(ch *Channel, msg interface{}) error {
-	if pl.cachedOutboundHandler == nil || pl.outboundDirty {
-		mws := less.Chain(less.Chain(pl.chOut...), less.Chain(pl.outbound...))
-		pl.cachedOutboundHandler = mws(pl.outboundHandler)
-		pl.outboundDirty = false
+	if pl.outboundDirty {
+		pl.compileOutbound()
 	}
 	return pl.cachedOutboundHandler(ch.Context(), ch, msg)
 }
@@ -134,8 +123,25 @@ func (pl *pipeline) Release() {
 	pl.cachedOutboundHandler = nil
 	pl.inboundDirty = false
 	pl.outboundDirty = false
-
-	pool.Put(pl)
 }
 
 func emptyHandler(_ context.Context, _ less.Channel, _ interface{}) error { return nil }
+
+func (pl *pipeline) compileInbound() {
+	mws := less.Chain(less.Chain(pl.inbound...), less.Chain(pl.chIn...))
+	if pl.router != nil {
+		mws = less.Chain(mws, pl.router)
+	}
+	pl.cachedInboundHandler = mws(emptyHandler)
+	pl.inboundDirty = false
+}
+
+func (pl *pipeline) compileOutbound() {
+	mws := less.Chain(less.Chain(pl.chOut...), less.Chain(pl.outbound...))
+	handler := pl.outboundHandler
+	if handler == nil {
+		handler = emptyHandler
+	}
+	pl.cachedOutboundHandler = mws(handler)
+	pl.outboundDirty = false
+}

@@ -25,12 +25,6 @@ type Server struct {
 	handler    engine.TransHandler
 }
 
-var defaultServerOptions = &serverOptions{
-	addr:      "127.0.0.1",
-	port:      "8888",
-	transport: tcp.New(),
-}
-
 type serverOptions struct {
 	addr          string
 	port          string
@@ -41,7 +35,7 @@ type serverOptions struct {
 
 // NewServer creates a server
 func NewServer(addr string, op ...SerOption) *Server {
-	ops := defaultServerOptions
+	ops := defaultServerOptions()
 
 	for _, o := range op {
 		o(ops)
@@ -50,6 +44,14 @@ func NewServer(addr string, op ...SerOption) *Server {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
 	return &Server{ctx: ctx, cancelFunc: cancelFunc, addr: addr, ops: ops}
+}
+
+func defaultServerOptions() *serverOptions {
+	return &serverOptions{
+		addr:      "127.0.0.1",
+		port:      "8888",
+		transport: tcp.New(),
+	}
 }
 
 // Run listens transport address and serving for channel and message request

@@ -5,13 +5,16 @@ import (
 	"encoding/binary"
 	"errors"
 	"github.com/emove/less"
+	"github.com/emove/less/io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/emove/less/log"
 	"github.com/emove/less/router"
+	"github.com/emove/less/transport"
 )
 
 func newServer() *Server {
@@ -161,5 +164,101 @@ func newRouter() router.Router {
 			})
 			return nil
 		}, nil
+	}
+}
+
+type shutdownAddr struct{}
+
+func (shutdownAddr) Network() string { return "tcp" }
+func (shutdownAddr) String() string  { return "127.0.0.1:18888" }
+
+type shutdownConn struct {
+	closed int32
+}
+
+func (c *shutdownConn) Read(buf []byte) (int, error) { return 0, nil }
+func (c *shutdownConn) Reader() io.Reader            { return nil }
+func (c *shutdownConn) Writer() io.Writer            { return nil }
+func (c *shutdownConn) IsActive() bool               { return atomic.LoadInt32(&c.closed) == 0 }
+func (c *shutdownConn) Close() error {
+	atomic.StoreInt32(&c.closed, 1)
+	return nil
+}
+func (c *shutdownConn) LocalAddr() net.Addr  { return shutdownAddr{} }
+func (c *shutdownConn) RemoteAddr() net.Addr { return shutdownAddr{} }
+
+type blockingTransport struct {
+	driver  transport.EventDriver
+	started chan struct{}
+	done    chan struct{}
+}
+
+func newBlockingTransport() *blockingTransport {
+	return &blockingTransport{
+		started: make(chan struct{}),
+		done:    make(chan struct{}),
+	}
+}
+
+func (t *blockingTransport) Listen(addr string, driver transport.EventDriver) error {
+	t.driver = driver
+	close(t.started)
+	<-t.done
+	return nil
+}
+
+func (t *blockingTransport) Close() {
+	select {
+	case <-t.done:
+	default:
+		close(t.done)
+	}
+}
+
+func TestServer_Shutdown_ClosesActiveConnections(t *testing.T) {
+	trans := newBlockingTransport()
+	srv := NewServer("127.0.0.1:18888", WithTransport(trans), WithRouter(newRouter()))
+
+	srv.Run()
+
+	select {
+	case <-trans.started:
+	case <-time.After(time.Second):
+		t.Fatal("server did not start transport listener")
+	}
+
+	conn := &shutdownConn{}
+	if _, err := trans.driver.OnConnect(context.Background(), conn); err != nil {
+		t.Fatalf("OnConnect failed: %v", err)
+	}
+
+	srv.Shutdown(context.Background(), nil)
+
+	deadline := time.After(200 * time.Millisecond)
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+
+	for conn.IsActive() {
+		select {
+		case <-deadline:
+			t.Fatal("expected Server.Shutdown to close active connections")
+		case <-tick.C:
+		}
+	}
+}
+
+func TestNewServer_ClonesDefaultOptions(t *testing.T) {
+	srvWithHooks := NewServer("127.0.0.1:18888",
+		WithOnChannelClosed(deleteOnChannelClosed()),
+		WithRouter(newRouter()),
+	)
+	srvWithoutHooks := NewServer("127.0.0.1:18889", WithRouter(newRouter()))
+
+	if srvWithHooks.ops == srvWithoutHooks.ops {
+		t.Fatal("expected NewServer to clone default options per instance")
+	}
+
+	if got := len(srvWithoutHooks.ops.transOptions); got != 1 {
+		t.Fatalf("expected isolated transOptions for second server, got %d", got)
 	}
 }

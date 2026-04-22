@@ -25,12 +25,14 @@ type options struct {
 	outbound              []less.Middleware
 }
 
-var defaultTransOptions = &options{
-	maxChannelSize:        math.MaxUint32,  // infinity
-	maxSendMessageSize:    1024 * 1024 * 4, // 4M
-	maxReceiveMessageSize: 1024 * 1024 * 4, // 4M
-	packetCodec:           packet.NewVariableLengthCodec(),
-	payloadCodec:          payload.NewTextCodec(),
+func defaultTransOptions() *options {
+	return &options{
+		maxChannelSize:        math.MaxUint32,  // infinity
+		maxSendMessageSize:    1024 * 1024 * 4, // 4M
+		maxReceiveMessageSize: 1024 * 1024 * 4, // 4M
+		packetCodec:           packet.NewVariableLengthCodec(),
+		payloadCodec:          payload.NewTextCodec(),
+	}
 }
 
 func MaxChannelSize(size uint32) Option {

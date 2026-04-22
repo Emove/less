@@ -6,13 +6,19 @@ import (
 )
 
 type (
+	// Interceptor defines the interceptor used to intercept message.
+	Interceptor func(message interface{}) bool
+	// Handler defines the handler invoked by Middleware.
+	Handler func(ctx context.Context, ch Channel, message interface{}) error
+	// Middleware is transport Middleware.
+	Middleware func(handler Handler) Handler
 	// OnChannel is a hook which will be invoked when received a network connect request.
 	OnChannel func(ctx context.Context, ch Channel) (context.Context, error)
 	// OnChannelClosed is a hook which will be invoked when channel closed.
 	OnChannelClosed func(ctx context.Context, ch Channel, err error)
 )
 
-// Channel defines the behaviors of channel.
+// Channel defines the public behaviors of a channel.
 type Channel interface {
 	// Context returns custom context if set, or returns context.Background.
 	Context() context.Context
@@ -29,20 +35,8 @@ type Channel interface {
 	// IsActive returns false only when the channel closed.
 	IsActive() bool
 
-	// Close closing the channel after inbound and outbound event done.
+	// Close closes the channel after inbound and outbound events complete.
 	Close(err error)
-
-	// CloseReader closes the channel reader then the channel is unable to receive any message.
-	CloseReader()
-
-	// CloseWriter close the channel writer then the channel is unable to send any message.
-	CloseWriter()
-
-	// Readable returns the channel readable or not
-	Readable() bool
-
-	// Writeable returns the channel writeable or not
-	Writeable() bool
 
 	// AddOnChannelClosed adds OnChannelClosed hooks for this channel.
 	AddOnChannelClosed(onChannelClosed ...OnChannelClosed)
@@ -52,4 +46,14 @@ type Channel interface {
 
 	// AddOutboundMiddleware adds outbound Middleware for this channel.
 	AddOutboundMiddleware(mw ...Middleware)
+}
+
+// Chain returns a Middleware that specifies the chained handler for transport.
+func Chain(ms ...Middleware) Middleware {
+	return func(next Handler) Handler {
+		for i := len(ms) - 1; i >= 0; i-- {
+			next = ms[i](next)
+		}
+		return next
+	}
 }

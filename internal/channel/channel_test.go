@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"reflect"
 	"sync/atomic"
 	"testing"
 
@@ -19,28 +20,34 @@ func (mockAddr) String() string  { return "127.0.0.1:9999" }
 
 // mockConn implements transport.Connection for testing.
 type mockConn struct {
-	active int32
+	active     int32
+	closeCount int32
 }
 
-func (m *mockConn) Read(buf []byte) (int, error)  { return 0, nil }
-func (m *mockConn) Reader() io.Reader              { return nil }
-func (m *mockConn) Writer() io.Writer              { return nil }
-func (m *mockConn) IsActive() bool                 { return atomic.LoadInt32(&m.active) == 0 }
-func (m *mockConn) Close() error                   { atomic.StoreInt32(&m.active, 1); return nil }
-func (m *mockConn) LocalAddr() net.Addr            { return mockAddr{} }
-func (m *mockConn) RemoteAddr() net.Addr           { return mockAddr{} }
+func (m *mockConn) Read(buf []byte) (int, error) { return 0, nil }
+func (m *mockConn) Reader() io.Reader            { return nil }
+func (m *mockConn) Writer() io.Writer            { return nil }
+func (m *mockConn) IsActive() bool               { return atomic.LoadInt32(&m.active) == 0 }
+func (m *mockConn) Close() error {
+	atomic.AddInt32(&m.closeCount, 1)
+	atomic.StoreInt32(&m.active, 1)
+	return nil
+}
+func (m *mockConn) LocalAddr() net.Addr  { return mockAddr{} }
+func (m *mockConn) RemoteAddr() net.Addr { return mockAddr{} }
 
 // ============================== Test 7.1: Close() idempotency ============================== //
 
 func TestChannel_Close_Idempotent(t *testing.T) {
 	var closedCount int32
+	conn := &mockConn{}
 
 	onChannelClosed := func(ctx context.Context, ch less.Channel, err error) {
 		atomic.AddInt32(&closedCount, 1)
 	}
 
 	factory := NewPipelineFactory(nil, []less.OnChannelClosed{onChannelClosed}, nil, nil, nil, nil)
-	ch := NewChannel(&mockConn{}, factory)
+	ch := NewChannel(conn, factory)
 	if err := ch.Activate(context.Background()); err != nil {
 		t.Fatalf("Activate failed: %v", err)
 	}
@@ -52,6 +59,14 @@ func TestChannel_Close_Idempotent(t *testing.T) {
 
 	if count := atomic.LoadInt32(&closedCount); count != 1 {
 		t.Errorf("OnChannelClosed called %d times, want 1", count)
+	}
+
+	if conn.IsActive() {
+		t.Fatal("expected Channel.Close to close the underlying connection")
+	}
+
+	if count := atomic.LoadInt32(&conn.closeCount); count != 1 {
+		t.Errorf("connection.Close called %d times, want 1", count)
 	}
 }
 
@@ -125,6 +140,35 @@ func TestPipeline_OutboundOrder(t *testing.T) {
 	for i, v := range expected {
 		if order[i] != v {
 			t.Errorf("order[%d] = %s, want %s", i, order[i], v)
+		}
+	}
+}
+
+func TestLessChannel_PublicContract(t *testing.T) {
+	channelType := reflect.TypeOf((*less.Channel)(nil)).Elem()
+
+	required := []string{
+		"Context",
+		"RemoteAddr",
+		"LocalAddr",
+		"Write",
+		"IsActive",
+		"Close",
+		"AddOnChannelClosed",
+		"AddInboundMiddleware",
+		"AddOutboundMiddleware",
+	}
+
+	for _, method := range required {
+		if _, ok := channelType.MethodByName(method); !ok {
+			t.Fatalf("less.Channel must expose %s", method)
+		}
+	}
+
+	forbidden := []string{"CloseReader", "CloseWriter", "Readable", "Writeable"}
+	for _, method := range forbidden {
+		if _, ok := channelType.MethodByName(method); ok {
+			t.Fatalf("less.Channel must not expose %s", method)
 		}
 	}
 }

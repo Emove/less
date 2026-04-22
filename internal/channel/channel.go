@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"github.com/emove/less"
-	"github.com/emove/less/log"
 	"github.com/emove/less/io"
+	"github.com/emove/less/log"
 	"github.com/emove/less/transport"
 	"net"
 	"sync/atomic"
@@ -30,6 +30,7 @@ type Channel struct {
 	ctx       context.Context
 	conn      transport.Connection
 	state     int32
+	closed    int32
 	done      chan struct{}
 	pl        *pipeline
 	side      int // represents client's channel or server's channel
@@ -90,11 +91,19 @@ func (ch *Channel) Writeable() bool {
 }
 
 func (ch *Channel) Close(err error) {
-	old := atomic.SwapInt32(&ch.state, inactive)
-	if old == inactive {
+	if !atomic.CompareAndSwapInt32(&ch.closed, 0, 1) {
 		return
 	}
-	ch.pl.FireOnChannelClosed(ch, err)
+
+	old := atomic.SwapInt32(&ch.state, inactive)
+	if closeErr := ch.conn.Close(); err == nil {
+		err = closeErr
+	}
+
+	if old != inactive {
+		ch.pl.FireOnChannelClosed(ch, err)
+	}
+	ch.pl.Release()
 }
 
 // AddOnChannelClosed adds OnChannelClosed for channel
