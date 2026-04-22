@@ -17,11 +17,11 @@ type EventDriver interface {
 	OnConnClosed(ctx context.Context, con Connection, err error)
 }
 
-// Listener defines the behaviors of Listener.
-type Listener interface {
-	// Listen the addr and accept the network connection request.
+// Transport defines a Transport
+type Transport interface {
+	// Listen listens on the given address and uses the driver for connection events.
 	Listen(addr string, driver EventDriver) error
-	// Close closes the Listener.
+	// Close closes the Transport.
 	Close()
 }
 
@@ -29,24 +29,4 @@ type Listener interface {
 type Dialer interface {
 	// Dial dials the remote endpoint.
 	Dial(net, addr string) error
-}
-
-// Transport defines a Transport
-type Transport interface {
-	Close()
-}
-
-type BlockingTransport interface {
-	Transport
-	Listener
-	Dialer
-}
-
-type DrivenTransport interface {
-	Transport
-	SetEventDriver(driver EventDriver)
-}
-
-type Acceptor interface {
-	Accept() (Connection, error)
 }

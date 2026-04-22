@@ -3,7 +3,6 @@ package payload
 import (
 	"errors"
 	"github.com/emove/less/codec"
-	"github.com/emove/less/pkg/io"
 )
 
 var ErrMessageNotString = errors.New("message can not convert to string")
@@ -22,23 +21,17 @@ func (*textPayloadCodec) Name() string {
 	return "text-payload-codec"
 }
 
-func (*textPayloadCodec) Marshal(message interface{}, writer io.Writer) (err error) {
-	switch message.(type) {
+func (*textPayloadCodec) Marshal(message any) ([]byte, error) {
+	switch v := message.(type) {
 	case string:
-		_, err = writer.Write([]byte(message.(string)))
+		return []byte(v), nil
 	case []byte:
-		_, err = writer.Write(message.([]byte))
+		return v, nil
 	default:
-		return ErrMessageNotString
+		return nil, ErrMessageNotString
 	}
-	return
 }
 
-func (*textPayloadCodec) UnMarshal(reader io.Reader) (message interface{}, err error) {
-	content, err := reader.Next(reader.Length())
-	if err != nil {
-		return
-	}
-
-	return string(content), nil
+func (*textPayloadCodec) Unmarshal(payload []byte) (any, error) {
+	return string(payload), nil
 }

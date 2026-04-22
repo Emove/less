@@ -2,11 +2,9 @@ package packet
 
 import (
 	"bytes"
-	"github.com/emove/less/codec"
-	"github.com/emove/less/codec/payload"
-	less_io "github.com/emove/less/pkg/io"
-	ior "github.com/emove/less/pkg/io/reader"
-	"github.com/emove/less/pkg/io/writer"
+	less_io "github.com/emove/less/io"
+	ior "github.com/emove/less/io/reader"
+	"github.com/emove/less/io/writer"
 	"io"
 	"reflect"
 	"testing"
@@ -31,39 +29,38 @@ func Test_fixedLengthCodec_Decode(t *testing.T) {
 		length uint32
 	}
 	type args struct {
-		reader       less_io.Reader
-		payloadCodec codec.PayloadCodec
+		reader less_io.Reader
 	}
 	tests := []struct {
 		name        string
 		times       int
 		fields      fields
 		args        args
-		wantMessage []string
+		wantPayload [][]byte
 		wantErr     bool
 	}{
 		{
 			name:        "first",
 			times:       1,
 			fields:      fields{length: 8},
-			args:        args{reader: ior.NewBufferReader(newTestReader([]byte("12345678"))), payloadCodec: payload.NewTextCodec()},
-			wantMessage: []string{"12345678"},
+			args:        args{reader: ior.NewBufferReader(newTestReader([]byte("12345678")))},
+			wantPayload: [][]byte{[]byte("12345678")},
 			wantErr:     false,
 		},
 		{
 			name:        "second",
 			times:       2,
 			fields:      fields{length: 8},
-			args:        args{reader: ior.NewBufferReader(newTestReader([]byte("1234567887654321"))), payloadCodec: payload.NewTextCodec()},
-			wantMessage: []string{"12345678", "87654321"},
+			args:        args{reader: ior.NewBufferReader(newTestReader([]byte("1234567887654321")))},
+			wantPayload: [][]byte{[]byte("12345678"), []byte("87654321")},
 			wantErr:     false,
 		},
 		{
 			name:        "third",
 			times:       1,
 			fields:      fields{length: 8},
-			args:        args{reader: ior.NewLimitReader(ior.NewBufferReader(newTestReader([]byte("1234567"))), 7), payloadCodec: payload.NewTextCodec()},
-			wantMessage: nil,
+			args:        args{reader: ior.NewLimitReader(ior.NewBufferReader(newTestReader([]byte("1234567"))), 7)},
+			wantPayload: nil,
 			wantErr:     true,
 		},
 	}
@@ -73,13 +70,13 @@ func Test_fixedLengthCodec_Decode(t *testing.T) {
 				c := &fixedLengthCodec{
 					length: tt.fields.length,
 				}
-				gotMessage, err := c.Decode(tt.args.reader, tt.args.payloadCodec)
+				gotPayload, err := c.Decode(tt.args.reader)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("Decode() error = %v, wantErr %v", err, tt.wantErr)
 					return
 				}
-				if tt.wantMessage != nil && !reflect.DeepEqual(gotMessage, tt.wantMessage[i]) {
-					t.Errorf("Decode() gotMessage = %v, want %v", gotMessage, tt.wantMessage)
+				if tt.wantPayload != nil && !reflect.DeepEqual(gotPayload, tt.wantPayload[i]) {
+					t.Errorf("Decode() gotPayload = %v, want %v", gotPayload, tt.wantPayload[i])
 				}
 			})
 		}
@@ -91,8 +88,7 @@ func Test_fixedLengthCodec_Encode(t *testing.T) {
 		length uint32
 	}
 	type args struct {
-		writer       less_io.Writer
-		payloadCodec codec.PayloadCodec
+		writer less_io.Writer
 	}
 	buf := &bytes.Buffer{}
 	tests := []struct {
@@ -100,14 +96,14 @@ func Test_fixedLengthCodec_Encode(t *testing.T) {
 		fields  fields
 		msgs    []string
 		args    args
-		want    interface{}
+		want    string
 		wantErr bool
 	}{
 		{
 			name:    "first",
 			fields:  fields{length: 8},
 			msgs:    []string{"12345678"},
-			args:    args{writer: writer.NewBufferWriter(buf), payloadCodec: payload.NewTextCodec()},
+			args:    args{writer: writer.NewBufferWriter(buf)},
 			want:    "12345678",
 			wantErr: false,
 		},
@@ -115,7 +111,7 @@ func Test_fixedLengthCodec_Encode(t *testing.T) {
 			name:    "second",
 			fields:  fields{length: 7},
 			msgs:    []string{"12345678"},
-			args:    args{writer: writer.NewBufferWriter(buf), payloadCodec: payload.NewTextCodec()},
+			args:    args{writer: writer.NewBufferWriter(buf)},
 			want:    "",
 			wantErr: true,
 		},
@@ -123,7 +119,7 @@ func Test_fixedLengthCodec_Encode(t *testing.T) {
 			name:    "third",
 			fields:  fields{length: 8},
 			msgs:    []string{"12345678", "87654321"},
-			args:    args{writer: writer.NewBufferWriter(buf), payloadCodec: payload.NewTextCodec()},
+			args:    args{writer: writer.NewBufferWriter(buf)},
 			want:    "1234567887654321",
 			wantErr: false,
 		},
@@ -134,7 +130,7 @@ func Test_fixedLengthCodec_Encode(t *testing.T) {
 				c := &fixedLengthCodec{
 					length: tt.fields.length,
 				}
-				if err := c.Encode(msg, tt.args.writer, tt.args.payloadCodec); (err != nil) != tt.wantErr {
+				if err := c.Encode([]byte(msg), tt.args.writer); (err != nil) != tt.wantErr {
 					t.Errorf("Encode() error = %v, wantErr %v", err, tt.wantErr)
 				}
 			})

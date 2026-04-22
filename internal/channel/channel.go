@@ -5,7 +5,7 @@ import (
 	"errors"
 	"github.com/emove/less"
 	"github.com/emove/less/log"
-	"github.com/emove/less/pkg/io"
+	"github.com/emove/less/io"
 	"github.com/emove/less/transport"
 	"net"
 	"sync/atomic"
@@ -90,15 +90,11 @@ func (ch *Channel) Writeable() bool {
 }
 
 func (ch *Channel) Close(err error) {
-
-	//old := atomic.LoadInt32(&ch.state)
-	//if inactive == old || !atomic.CompareAndSwapInt32(&ch.state, old, inactive) {
-	//	return ErrChannelClosed
-	//}
-	ch.close(inactive)
+	old := atomic.SwapInt32(&ch.state, inactive)
+	if old == inactive {
+		return
+	}
 	ch.pl.FireOnChannelClosed(ch, err)
-
-	//return nil
 }
 
 // AddOnChannelClosed adds OnChannelClosed for channel
@@ -114,6 +110,11 @@ func (ch *Channel) AddInboundMiddleware(mw ...less.Middleware) {
 // AddOutboundMiddleware adds outbound middleware for current channel only
 func (ch *Channel) AddOutboundMiddleware(mw ...less.Middleware) {
 	ch.pl.AddOutbound(mw...)
+}
+
+// SetOutboundHandler sets the outbound handler for this channel's pipeline
+func (ch *Channel) SetOutboundHandler(h less.Handler) {
+	ch.pl.SetOutboundHandler(h)
 }
 
 // ====================================== implements stater ============================================ //
@@ -140,7 +141,7 @@ func (ch *Channel) Reader() (io.Reader, error) {
 }
 
 func (ch *Channel) Writer() (io.Writer, error) {
-	if !ch.calState(readable) {
+	if !ch.calState(writeable) {
 		return nil, ErrChannelWriterClosed
 	}
 	return ch.conn.Writer(), nil

@@ -1,67 +1,55 @@
 package payload
 
 import (
-	"bytes"
-	"github.com/emove/less/pkg/io"
-	"github.com/emove/less/pkg/io/reader"
-	"github.com/emove/less/pkg/io/writer"
 	"reflect"
 	"testing"
 )
 
 func TestTextPayloadCodec_Marshal(t *testing.T) {
-	type args struct {
-		message interface{}
-		writer  io.Writer
-	}
-	buff := &bytes.Buffer{}
 	tests := []struct {
-		args    args
-		want    string
+		message interface{}
+		want    []byte
 		wantErr bool
 	}{
 		{
-			args:    args{message: "hello world", writer: writer.NewBufferWriter(buff)},
-			want:    "hello world",
+			message: "hello world",
+			want:    []byte("hello world"),
 			wantErr: false,
 		},
 		{
-			args:    args{message: []byte("hello world"), writer: writer.NewBufferWriter(buff)},
-			want:    "hello world",
+			message: []byte("hello world"),
+			want:    []byte("hello world"),
 			wantErr: false,
 		},
 		{
-			args:    args{message: 1, writer: writer.NewBufferWriter(buff)},
-			want:    "",
+			message: 1,
+			want:    nil,
 			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
 			te := &textPayloadCodec{}
-			if err := te.Marshal(tt.args.message, tt.args.writer); (err != nil) && tt.wantErr {
-				t.Logf("Marshal() error = %v, wantErr %v", err, tt.wantErr)
+			got, err := te.Marshal(tt.message)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Marshal() error = %v, wantErr %v", err, tt.wantErr)
+				return
 			}
-			_ = tt.args.writer.Flush()
-			if buff.String() != tt.want {
-				t.Errorf("Marshal() want = %v, got = %v", tt.want, buff.String())
+			if !tt.wantErr && !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Marshal() want = %v, got = %v", tt.want, got)
 			}
-			buff.Reset()
 		})
 	}
 }
 
-func TestTextPayloadCodec_UnMarshal(t *testing.T) {
-	type args struct {
-		reader io.Reader
-	}
+func TestTextPayloadCodec_Unmarshal(t *testing.T) {
 	tests := []struct {
-		args        args
+		payload     []byte
 		wantMessage interface{}
 		wantErr     bool
 	}{
 		{
-			args:        args{reader: unMarshalReader("hello world", 11)},
+			payload:     []byte("hello world"),
 			wantMessage: "hello world",
 			wantErr:     false,
 		},
@@ -69,20 +57,14 @@ func TestTextPayloadCodec_UnMarshal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
 			te := &textPayloadCodec{}
-			gotMessage, err := te.UnMarshal(tt.args.reader)
+			gotMessage, err := te.Unmarshal(tt.payload)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("UnMarshal() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(gotMessage, tt.wantMessage) {
-				t.Errorf("UnMarshal() gotMessage = %v, want %v", gotMessage, tt.wantMessage)
+				t.Errorf("Unmarshal() gotMessage = %v, want %v", gotMessage, tt.wantMessage)
 			}
 		})
 	}
-}
-
-func unMarshalReader(msg string, size uint32) io.Reader {
-	buff := &bytes.Buffer{}
-	buff.WriteString(msg)
-	return reader.NewLimitReader(reader.NewBufferReader(buff), size)
 }

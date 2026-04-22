@@ -1,4 +1,4 @@
-package transport
+package engine
 
 import (
 	"context"
@@ -14,16 +14,11 @@ import (
 	"github.com/emove/less/transport"
 )
 
-type BoundHandler interface {
-	OnRead(ch *channel.Channel, msg interface{}) (err error)
-	OnWrite(ch *channel.Channel, msg interface{}) error
-}
-
 type ctxChannelKey struct{}
 
 type TransHandler interface {
 	transport.EventDriver
-	BoundHandler
+	OnRead(ch *channel.Channel, msg interface{}) (err error)
 	Close() error
 }
 
@@ -44,7 +39,7 @@ func NewSrvTransHandler(ctx context.Context, ops ...Option) TransHandler {
 	inbound := opts.inbound
 	outbound := opts.outbound
 
-	th.pipelineFactory = channel.NewPipelineFactory(opts.onChannel, onChannelClosed, inbound, outbound, NewRouterMiddleware(opts.router), OutboundHandler(th))
+	th.pipelineFactory = channel.NewPipelineFactory(opts.onChannel, onChannelClosed, inbound, outbound, NewRouterMiddleware(opts.router), nil)
 
 	log.Infow("max-channel-size", opts.maxChannelSize, "max-send-message-size", opts.maxSendMessageSize, "max-receive-message-size", opts.maxReceiveMessageSize)
 	log.Infow("packet-codec", opts.packetCodec.Name(), "payload-codec", opts.payloadCodec.Name())
@@ -94,6 +89,9 @@ func (th *svrTransHandler) OnConnect(ctx context.Context, con transport.Connecti
 
 	ch = channel.NewChannel(con, th.pipelineFactory)
 
+	writeHandler := th.newWriteHandler(con)
+	ch.SetOutboundHandler(writeHandler)
+
 	if err = ch.Activate(ctx); err != nil {
 		log.Debugf("connect request from: %s failed, err: %v", con.RemoteAddr().String(), err)
 		return ctx, err
@@ -124,7 +122,13 @@ func (th *svrTransHandler) OnMessage(ctx context.Context, _ transport.Connection
 		ch.Close(err)
 	})
 
-	msg, err := th.ops.packetCodec.Decode(reader, th.ops.payloadCodec)
+	payload, err := th.ops.packetCodec.Decode(reader)
+	if err != nil {
+		ch.Close(err)
+		return err
+	}
+
+	msg, err := th.ops.payloadCodec.Unmarshal(payload)
 	if err != nil {
 		ch.Close(err)
 		return err
@@ -151,25 +155,22 @@ func (th *svrTransHandler) OnRead(ch *channel.Channel, msg interface{}) error {
 	return nil
 }
 
-func (th *svrTransHandler) OnWrite(ch *channel.Channel, msg interface{}) error {
-	defer recovery.Recover(func(err error) {
-		ch.Close(err)
-	})
-
-	if serving != atomic.LoadInt32(&th.state) {
-		return fmt.Errorf("transport has been closed")
+func (th *svrTransHandler) newWriteHandler(conn transport.Connection) less.Handler {
+	return func(ctx context.Context, _ less.Channel, message interface{}) error {
+		if serving != atomic.LoadInt32(&th.state) {
+			return fmt.Errorf("transport has been closed")
+		}
+		payload, err := th.ops.payloadCodec.Marshal(message)
+		if err != nil {
+			return err
+		}
+		writer := conn.Writer()
+		defer writer.Release()
+		if err := th.ops.packetCodec.Encode(payload, writer); err != nil {
+			return err
+		}
+		return writer.Flush()
 	}
-	writer, err := ch.Writer()
-	if err != nil {
-		return err
-	}
-	writer.Release()
-	if err := th.ops.packetCodec.Encode(msg, writer, th.ops.payloadCodec); err != nil {
-		return err
-	}
-	writer.Flush()
-	writer.Release()
-	return nil
 }
 
 func (th *svrTransHandler) Close() error {

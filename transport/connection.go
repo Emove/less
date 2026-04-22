@@ -3,7 +3,7 @@ package transport
 import (
 	"net"
 
-	"github.com/emove/less/pkg/io"
+	"github.com/emove/less/io"
 )
 
 const (

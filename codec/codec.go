@@ -1,17 +1,17 @@
 package codec
 
 import (
-	"github.com/emove/less/pkg/io"
+	"github.com/emove/less/io"
 )
 
 type PacketCodec interface {
 	Name() string
-	Encode(message interface{}, writer io.Writer, payloadCodec PayloadCodec) (err error)
-	Decode(reader io.Reader, payloadCodec PayloadCodec) (message interface{}, err error)
+	Encode(payload []byte, writer io.Writer) error
+	Decode(reader io.Reader) (payload []byte, err error)
 }
 
 type PayloadCodec interface {
 	Name() string
-	Marshal(message interface{}, writer io.Writer) (err error)
-	UnMarshal(reader io.Reader) (message interface{}, err error)
+	Marshal(message any) ([]byte, error)
+	Unmarshal(payload []byte) (any, error)
 }

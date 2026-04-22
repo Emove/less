@@ -45,21 +45,32 @@ type pipeline struct {
 	chocc []less.OnChannelClosed
 	chIn  []less.Middleware
 	chOut []less.Middleware
+
+	cachedInboundHandler  less.Handler
+	cachedOutboundHandler less.Handler
+	inboundDirty          bool
+	outboundDirty         bool
 }
 
 func (pl *pipeline) OnRead(ch *Channel, msg interface{}) (err error) {
-	mws := less.Chain(less.Chain(pl.inbound...), less.Chain(pl.chIn...))
-
-	if pl.router != nil {
-		mws = less.Chain(mws, pl.router)
+	if pl.cachedInboundHandler == nil || pl.inboundDirty {
+		mws := less.Chain(less.Chain(pl.inbound...), less.Chain(pl.chIn...))
+		if pl.router != nil {
+			mws = less.Chain(mws, pl.router)
+		}
+		pl.cachedInboundHandler = mws(emptyHandler)
+		pl.inboundDirty = false
 	}
-
-	return mws(emptyHandler)(ch.Context(), ch, msg)
+	return pl.cachedInboundHandler(ch.Context(), ch, msg)
 }
 
 func (pl *pipeline) OnWrite(ch *Channel, msg interface{}) error {
-	mws := less.Chain(less.Chain(pl.chOut...), less.Chain(pl.outbound...))
-	return mws(pl.outboundHandler)(ch.Context(), ch, msg)
+	if pl.cachedOutboundHandler == nil || pl.outboundDirty {
+		mws := less.Chain(less.Chain(pl.chOut...), less.Chain(pl.outbound...))
+		pl.cachedOutboundHandler = mws(pl.outboundHandler)
+		pl.outboundDirty = false
+	}
+	return pl.cachedOutboundHandler(ch.Context(), ch, msg)
 }
 
 // AddOnChannelClosed adds channel's specific OnChannelClosed hooks
@@ -73,6 +84,7 @@ func (pl *pipeline) AddOnChannelClosed(onChannelClosed ...less.OnChannelClosed) 
 func (pl *pipeline) AddInbound(inbound ...less.Middleware) {
 	if len(inbound) > 0 {
 		pl.chIn = append(pl.chIn, inbound...)
+		pl.inboundDirty = true
 	}
 }
 
@@ -80,6 +92,7 @@ func (pl *pipeline) AddInbound(inbound ...less.Middleware) {
 func (pl *pipeline) AddOutbound(outbound ...less.Middleware) {
 	if len(outbound) > 0 {
 		pl.chOut = append(pl.chOut, outbound...)
+		pl.outboundDirty = true
 	}
 }
 
@@ -106,11 +119,21 @@ func (pl *pipeline) FireOnChannelClosed(ch *Channel, err error) {
 	}
 }
 
+// SetOutboundHandler sets the outbound handler and marks the outbound chain as dirty
+func (pl *pipeline) SetOutboundHandler(h less.Handler) {
+	pl.outboundHandler = h
+	pl.outboundDirty = true
+}
+
 // Release releases channel's specific hooks and reuse pipeline
 func (pl *pipeline) Release() {
 	pl.chocc = nil
 	pl.chIn = nil
 	pl.chOut = nil
+	pl.cachedInboundHandler = nil
+	pl.cachedOutboundHandler = nil
+	pl.inboundDirty = false
+	pl.outboundDirty = false
 
 	pool.Put(pl)
 }

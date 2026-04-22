@@ -1,8 +1,8 @@
 package reader
 
 import (
-	"github.com/emove/less/internal/errors"
-	less_io "github.com/emove/less/pkg/io"
+	"fmt"
+	less_io "github.com/emove/less/io"
 )
 
 // NewLimitReader returns a Reader that readable bytes limited
@@ -24,7 +24,7 @@ var _ less_io.Reader = (*limitReader)(nil)
 
 func (lr *limitReader) Read(buff []byte) (n int, err error) {
 	if int(lr.remain)-len(buff) < 0 {
-		return 0, errors.New("buffer remain not enough, remain: %d, want: %d", lr.remain, len(buff))
+		return 0, fmt.Errorf("buffer remain not enough, remain: %d, want: %d", lr.remain, len(buff))
 	}
 	n, err = lr.decorator.Read(buff)
 	if err == nil {
@@ -35,7 +35,7 @@ func (lr *limitReader) Read(buff []byte) (n int, err error) {
 
 func (lr *limitReader) Next(n int) (buf []byte, err error) {
 	if int(lr.remain)-n < 0 {
-		return buf, errors.New("buffer remain not enough, remain: %d, want: %d", lr.remain, n)
+		return buf, fmt.Errorf("buffer remain not enough, remain: %d, want: %d", lr.remain, n)
 	}
 	if buf, err = lr.decorator.Next(n); err != nil {
 		return
@@ -46,14 +46,14 @@ func (lr *limitReader) Next(n int) (buf []byte, err error) {
 
 func (lr *limitReader) Peek(n int) (buf []byte, err error) {
 	if int(lr.remain)-n < 0 {
-		return buf, errors.New("buffer remain not enough, remain: %d, want: %d", lr.remain, n)
+		return buf, fmt.Errorf("buffer remain not enough, remain: %d, want: %d", lr.remain, n)
 	}
 	return lr.decorator.Peek(n)
 }
 
 func (lr *limitReader) Skip(n int) (err error) {
 	if int(lr.remain)-n < 0 {
-		return errors.New("buf remain not enough, remain: %d, want: %d", lr.remain, n)
+		return fmt.Errorf("buf remain not enough, remain: %d, want: %d", lr.remain, n)
 	}
 	if err = lr.decorator.Skip(n); err != nil {
 		return

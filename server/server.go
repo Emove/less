@@ -6,7 +6,7 @@ import (
 	"net"
 
 	"github.com/emove/less"
-	trans "github.com/emove/less/internal/transport"
+	engine "github.com/emove/less/internal/engine"
 	"github.com/emove/less/router"
 	"github.com/emove/less/transport"
 	"github.com/emove/less/transport/tcp"
@@ -22,7 +22,7 @@ type Server struct {
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 	ops        *serverOptions
-	handler    trans.TransHandler
+	handler    engine.TransHandler
 }
 
 var defaultServerOptions = &serverOptions{
@@ -35,7 +35,7 @@ type serverOptions struct {
 	addr          string
 	port          string
 	transport     transport.Transport
-	transOptions  []trans.Option
+	transOptions  []engine.Option
 	shutdownHooks []ShutdownHook
 }
 
@@ -57,19 +57,12 @@ func (srv *Server) Run() {
 
 	srv.addr = parseAddr(srv)
 
-	srv.handler = trans.NewSrvTransHandler(srv.ctx, srv.ops.transOptions...)
+	srv.handler = engine.NewSrvTransHandler(srv.ctx, srv.ops.transOptions...)
 
 	go func() {
-		switch srv.ops.transport.(type) {
-		case transport.DefaultTransport:
-			//_transport := srv.ops.transport.(transport.DefaultTransport)
-			//err := _transport.Listen(srv.addr, srv.handler)
-			//if err != nil {
-			//	srv.Shutdown()
-			//	log.Fatalf("less exits because err: %v", err)
-			//}
+		if err := srv.ops.transport.Listen(srv.addr, srv.handler); err != nil {
+			srv.Shutdown(context.Background(), err)
 		}
-
 	}()
 }
 
@@ -83,7 +76,7 @@ func (srv *Server) Shutdown(ctx context.Context, err error) {
 			hook(ctx, err)
 		}
 	}
-	_ = srv.ops.transport.Close(context.Background(), err)
+	srv.ops.transport.Close()
 	srv.cancelFunc()
 	select {
 	case <-srv.ctx.Done():
@@ -104,7 +97,7 @@ func WithTransport(transport transport.Transport) SerOption {
 func WithOnChannel(onChannel ...less.OnChannel) SerOption {
 	return func(ops *serverOptions) {
 		if len(onChannel) > 0 {
-			ops.transOptions = append(ops.transOptions, trans.AddOnChannel(onChannel...))
+			ops.transOptions = append(ops.transOptions, engine.AddOnChannel(onChannel...))
 		}
 	}
 }
@@ -113,7 +106,7 @@ func WithOnChannel(onChannel ...less.OnChannel) SerOption {
 func WithOnChannelClosed(onChannelClosed ...less.OnChannelClosed) SerOption {
 	return func(ops *serverOptions) {
 		if len(onChannelClosed) > 0 {
-			ops.transOptions = append(ops.transOptions, trans.AddOnChannelClosed(onChannelClosed...))
+			ops.transOptions = append(ops.transOptions, engine.AddOnChannelClosed(onChannelClosed...))
 		}
 	}
 }
@@ -121,7 +114,7 @@ func WithOnChannelClosed(onChannelClosed ...less.OnChannelClosed) SerOption {
 // WithRouter sets message router
 func WithRouter(router router.Router) SerOption {
 	return func(ops *serverOptions) {
-		ops.transOptions = append(ops.transOptions, trans.WithRouter(router))
+		ops.transOptions = append(ops.transOptions, engine.WithRouter(router))
 	}
 }
 
@@ -129,7 +122,7 @@ func WithRouter(router router.Router) SerOption {
 func WithInboundMiddleware(mws ...less.Middleware) SerOption {
 	return func(ops *serverOptions) {
 		if len(mws) > 0 {
-			ops.transOptions = append(ops.transOptions, trans.AddInboundMiddleware(mws...))
+			ops.transOptions = append(ops.transOptions, engine.AddInboundMiddleware(mws...))
 		}
 	}
 }
@@ -138,7 +131,7 @@ func WithInboundMiddleware(mws ...less.Middleware) SerOption {
 func WithOutboundMiddleware(mws ...less.Middleware) SerOption {
 	return func(ops *serverOptions) {
 		if len(mws) > 0 {
-			ops.transOptions = append(ops.transOptions, trans.AddOutboundMiddleware(mws...))
+			ops.transOptions = append(ops.transOptions, engine.AddOutboundMiddleware(mws...))
 		}
 	}
 }
@@ -154,21 +147,21 @@ func WithShutdownHooks(hooks ...ShutdownHook) SerOption {
 // MaxChannelSize sets the max size of channels
 func MaxChannelSize(size uint32) SerOption {
 	return func(ops *serverOptions) {
-		ops.transOptions = append(ops.transOptions, trans.MaxChannelSize(size))
+		ops.transOptions = append(ops.transOptions, engine.MaxChannelSize(size))
 	}
 }
 
 // MaxSendMessageSize sets the max size of message when send
 func MaxSendMessageSize(size uint32) SerOption {
 	return func(ops *serverOptions) {
-		ops.transOptions = append(ops.transOptions, trans.MaxSendMessageSize(size))
+		ops.transOptions = append(ops.transOptions, engine.MaxSendMessageSize(size))
 	}
 }
 
 // MaxReceiveMessageSize sets the max size of message when receive
 func MaxReceiveMessageSize(size uint32) SerOption {
 	return func(ops *serverOptions) {
-		ops.transOptions = append(ops.transOptions, trans.MaxReceiveMessageSize(size))
+		ops.transOptions = append(ops.transOptions, engine.MaxReceiveMessageSize(size))
 	}
 }
 

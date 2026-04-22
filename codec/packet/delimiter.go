@@ -3,8 +3,7 @@ package packet
 import (
 	"errors"
 	"github.com/emove/less/codec"
-	"github.com/emove/less/pkg/io"
-	ior "github.com/emove/less/pkg/io/reader"
+	"github.com/emove/less/io"
 )
 
 var ErrMsgSizeGreaterThanMaxLength = errors.New("message package size greater than max length")
@@ -56,26 +55,27 @@ func (dc *delimiterCodec) Name() string {
 	return "delimiter-packet-codec"
 }
 
-func (dc *delimiterCodec) Encode(message interface{}, writer io.Writer, payloadCodec codec.PayloadCodec) (err error) {
+func (dc *delimiterCodec) Encode(payload []byte, writer io.Writer) error {
 
-	// marshal message and write to writer
-	if err = payloadCodec.Marshal(message, writer); err != nil {
-		return
+	// write payload
+	if _, err := writer.Write(payload); err != nil {
+		return err
 	}
 
 	// append delimiter
 	if dc.autoAppendDelimiter {
-		if _, err = writer.Write(dc.delimiter); err != nil {
-			return
+		if _, err := writer.Write(dc.delimiter); err != nil {
+			return err
 		}
 	}
 
 	return writer.Flush()
 }
 
-func (dc *delimiterCodec) Decode(reader io.Reader, payloadCodec codec.PayloadCodec) (message interface{}, err error) {
+func (dc *delimiterCodec) Decode(reader io.Reader) ([]byte, error) {
 
 	var peek []byte
+	var err error
 	length, found := 0, false
 	for length = 1; length <= int(dc.maxLength) && !found; length++ {
 		peek, err = reader.Peek(length)
@@ -92,19 +92,20 @@ func (dc *delimiterCodec) Decode(reader io.Reader, payloadCodec codec.PayloadCod
 		return nil, ErrMsgSizeGreaterThanMaxLength
 	}
 
+	bodyLength := length
 	if dc.stripDelimiter {
-		// strip delimiter length
-		length -= dc.delimiterLength
+		bodyLength -= dc.delimiterLength
 	}
 
-	limiterReader := ior.NewLimitReader(reader, uint32(length))
-	defer func() {
-		limiterReader.Release()
-		if dc.stripDelimiter {
-			// release the delimiter buff manually
-			_ = reader.Skip(dc.delimiterLength)
-		}
-	}()
+	body, err := reader.Next(bodyLength)
+	if err != nil {
+		return nil, err
+	}
 
-	return payloadCodec.UnMarshal(limiterReader)
+	if dc.stripDelimiter {
+		// skip the delimiter bytes
+		_ = reader.Skip(dc.delimiterLength)
+	}
+
+	return body, nil
 }
