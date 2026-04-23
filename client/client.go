@@ -115,21 +115,20 @@ func (cli *Client) Close(err error) {
 	handler := cli.handler
 	cli.handler = nil
 	ch := cli.channel
-	cli.channel = nil
 	cancelFunc := cli.cancelFunc
 	cli.cancelFunc = nil
 	cli.ctx = nil
 	cli.mu.Unlock()
 
+	if ch != nil {
+		ch.Close(err)
+	}
 	if handler != nil {
 		_ = handler.Close()
 	}
 	cli.ops.transport.Close()
 	if cancelFunc != nil {
 		cancelFunc()
-	}
-	if ch != nil {
-		ch.Close(err)
 	}
 }
 

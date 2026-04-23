@@ -110,6 +110,51 @@ func TestClient_CodecOptionsRejectTypedNil(t *testing.T) {
 	})
 }
 
+func TestClient_ClosePropagatesCallerErrorOnce(t *testing.T) {
+	trans := &fakeTransport{}
+	conn := &fakeConn{}
+	customErr := errors.New("client shutdown")
+	var closedCount int32
+	var closedErr error
+
+	trans.dial = func(network, addr string, driver transport.EventDriver) error {
+		_, err := driver.OnConnect(context.Background(), conn)
+		return err
+	}
+
+	cli := NewClient(
+		"tcp",
+		"127.0.0.1:18888",
+		WithTransport(trans),
+		WithRouter(noopRouter()),
+		WithOnChannelClosed(func(context.Context, less.Channel, error) {
+			atomic.AddInt32(&closedCount, 1)
+		}),
+		WithOnChannelClosed(func(_ context.Context, _ less.Channel, err error) {
+			closedErr = err
+		}),
+	)
+
+	if err := cli.Dial(context.Background()); err != nil {
+		t.Fatalf("Dial failed: %v", err)
+	}
+
+	cli.Close(customErr)
+
+	if got := atomic.LoadInt32(&closedCount); got != 1 {
+		t.Fatalf("OnChannelClosed called %d times, want 1", got)
+	}
+	if !errors.Is(closedErr, customErr) {
+		t.Fatalf("OnChannelClosed error = %v, want %v", closedErr, customErr)
+	}
+	if cli.Channel() != nil {
+		t.Fatal("expected active channel to be cleared after Close")
+	}
+	if conn.IsActive() {
+		t.Fatal("expected Close to close the underlying connection")
+	}
+}
+
 func TestClient_OptionsSmoke(t *testing.T) {
 	_ = NewClient(
 		"tcp",
