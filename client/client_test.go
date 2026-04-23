@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -182,6 +183,63 @@ func TestClient_DialContextCancellationClosesCurrentSession(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("expected OnChannelClosed to observe context cancellation")
+	}
+}
+
+func TestClient_RemoteDisconnectClearsSessionAndAllowsRedial(t *testing.T) {
+	trans := &fakeTransport{}
+	var connectCtx context.Context
+	firstConn := &fakeConn{}
+	secondConn := &fakeConn{}
+
+	trans.dial = func(network, addr string, driver transport.EventDriver) error {
+		var conn transport.Connection
+		if atomic.LoadInt32(&trans.dialCalls) == 1 {
+			conn = firstConn
+		} else {
+			conn = secondConn
+		}
+
+		var err error
+		connectCtx, err = driver.OnConnect(context.Background(), conn)
+		return err
+	}
+
+	cli := NewClient(
+		"tcp",
+		"127.0.0.1:18888",
+		WithTransport(trans),
+		WithRouter(noopRouter()),
+	)
+	t.Cleanup(func() { cli.Close(nil) })
+
+	if err := cli.Dial(context.Background()); err != nil {
+		t.Fatalf("first Dial failed: %v", err)
+	}
+
+	firstChannel := cli.Channel()
+	if firstChannel == nil {
+		t.Fatal("expected first dial to capture an active channel")
+	}
+
+	trans.driver.OnConnClosed(connectCtx, firstConn, io.EOF)
+
+	waitFor(t, time.Second, func() bool {
+		return cli.Channel() == nil
+	})
+
+	if err := cli.Dial(context.Background()); err != nil {
+		t.Fatalf("second Dial failed after remote disconnect: %v", err)
+	}
+
+	if got := atomic.LoadInt32(&trans.dialCalls); got != 2 {
+		t.Fatalf("transport Dial called %d times, want 2", got)
+	}
+	if cli.Channel() == nil {
+		t.Fatal("expected redial to capture a new active channel")
+	}
+	if cli.Channel() == firstChannel {
+		t.Fatal("expected redial to replace the retired channel")
 	}
 }
 

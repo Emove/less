@@ -15,14 +15,15 @@ import (
 
 // Client is the dial-side peer for a less endpoint.
 type Client struct {
-	network    string
-	addr       string
-	ctx        context.Context
-	cancelFunc context.CancelFunc
-	ops        *clientOptions
-	handler    engine.TransHandler
-	channel    less.Channel
-	sessionID  uint64
+	network         string
+	addr            string
+	ctx             context.Context
+	cancelFunc      context.CancelFunc
+	ops             *clientOptions
+	handler         engine.TransHandler
+	channel         less.Channel
+	activeSessionID uint64
+	nextSessionID   uint64
 
 	mu sync.RWMutex
 }
@@ -71,12 +72,13 @@ func (cli *Client) Dial(ctx context.Context) error {
 	}
 
 	cli.mu.Lock()
-	if cli.handler != nil || channelIsActive(cli.channel) {
+	if cli.activeSessionID != 0 || cli.handler != nil || channelIsActive(cli.channel) {
 		cli.mu.Unlock()
 		return errClientSessionActive
 	}
-	sessionID := cli.sessionID + 1
-	cli.sessionID = sessionID
+	sessionID := cli.nextSessionID + 1
+	cli.nextSessionID = sessionID
+	cli.activeSessionID = sessionID
 	cli.ctx, cli.cancelFunc = context.WithCancel(ctx)
 	cli.channel = nil
 	cli.handler = nil
@@ -96,7 +98,7 @@ func (cli *Client) Dial(ctx context.Context) error {
 	handler := engine.NewEndpointHandler(dialCtx, options...)
 
 	cli.mu.Lock()
-	if cli.sessionID == sessionID {
+	if cli.activeSessionID == sessionID {
 		cli.handler = handler
 	}
 	cli.mu.Unlock()
@@ -135,7 +137,7 @@ func (cli *Client) closeWhenDialContextDone(sessionID uint64, parentCtx, dialCtx
 
 func (cli *Client) closeSessionIfCurrent(sessionID uint64, err error, closeTransport bool) bool {
 	cli.mu.Lock()
-	if cli.sessionID != sessionID {
+	if cli.activeSessionID != sessionID {
 		cli.mu.Unlock()
 		return false
 	}
@@ -146,7 +148,7 @@ func (cli *Client) closeSessionIfCurrent(sessionID uint64, err error, closeTrans
 	cancelFunc := cli.cancelFunc
 	cli.cancelFunc = nil
 	cli.ctx = nil
-	cli.sessionID = 0
+	cli.activeSessionID = 0
 	cli.mu.Unlock()
 
 	if ch != nil {
@@ -173,7 +175,7 @@ func (cli *Client) closeSession(err error, closeTransport bool) {
 	cancelFunc := cli.cancelFunc
 	cli.cancelFunc = nil
 	cli.ctx = nil
-	cli.sessionID = 0
+	cli.activeSessionID = 0
 	cli.mu.Unlock()
 
 	if ch != nil {
@@ -193,7 +195,7 @@ func (cli *Client) closeSession(err error, closeTransport bool) {
 func (cli *Client) captureChannel(sessionID uint64) less.OnChannel {
 	return func(ctx context.Context, ch less.Channel) (context.Context, error) {
 		cli.mu.Lock()
-		if cli.sessionID == sessionID {
+		if cli.activeSessionID == sessionID {
 			cli.channel = ch
 		}
 		cli.mu.Unlock()
@@ -202,13 +204,33 @@ func (cli *Client) captureChannel(sessionID uint64) less.OnChannel {
 }
 
 func (cli *Client) clearClosedChannel(sessionID uint64) less.OnChannelClosed {
-	return func(_ context.Context, ch less.Channel, _ error) {
-		cli.mu.Lock()
-		defer cli.mu.Unlock()
-		if cli.sessionID == sessionID && cli.channel == ch {
-			cli.channel = nil
-		}
+	return func(_ context.Context, _ less.Channel, _ error) {
+		cli.retireSessionIfCurrent(sessionID)
 	}
+}
+
+func (cli *Client) retireSessionIfCurrent(sessionID uint64) bool {
+	cli.mu.Lock()
+	if cli.activeSessionID != sessionID {
+		cli.mu.Unlock()
+		return false
+	}
+	handler := cli.handler
+	cli.handler = nil
+	cli.channel = nil
+	cancelFunc := cli.cancelFunc
+	cli.cancelFunc = nil
+	cli.ctx = nil
+	cli.activeSessionID = 0
+	cli.mu.Unlock()
+
+	if handler != nil {
+		_ = handler.Close()
+	}
+	if cancelFunc != nil {
+		cancelFunc()
+	}
+	return true
 }
 
 // WithTransport sets the transport used by the client.
