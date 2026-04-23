@@ -299,6 +299,74 @@ func TestClient_CloseDuringDialPreventsOrphanedSession(t *testing.T) {
 	}
 }
 
+func TestClient_CloseAfterLateSuccessfulDialDoesNotLeaveSessionActive(t *testing.T) {
+	trans := &fakeTransport{}
+	conn := &fakeConn{}
+	connected := make(chan struct{})
+	releaseDialReturn := make(chan struct{})
+	var closedCount int32
+
+	trans.dial = func(network, addr string, driver transport.EventDriver) error {
+		if _, err := driver.OnConnect(context.Background(), conn); err != nil {
+			return err
+		}
+		close(connected)
+		<-releaseDialReturn
+		return nil
+	}
+
+	cli := NewClient(
+		"tcp",
+		"127.0.0.1:18888",
+		WithTransport(trans),
+		WithRouter(noopRouter()),
+		WithOnChannelClosed(func(context.Context, less.Channel, error) {
+			atomic.AddInt32(&closedCount, 1)
+		}),
+	)
+	t.Cleanup(func() { cli.Close(nil) })
+
+	dialDone := make(chan error, 1)
+	go func() {
+		dialDone <- cli.Dial(context.Background())
+	}()
+
+	select {
+	case <-connected:
+	case <-time.After(time.Second):
+		t.Fatal("Dial did not reach connected state")
+	}
+
+	if got := atomic.LoadInt32(&trans.dialCalls); got != 1 {
+		t.Fatalf("transport Dial called %d times, want 1", got)
+	}
+	if cli.Channel() == nil {
+		t.Fatal("expected late-success dial to publish a channel before Close")
+	}
+
+	cli.Close(errors.New("close during late dial"))
+	close(releaseDialReturn)
+
+	select {
+	case err := <-dialDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Dial error = %v, want %v", err, context.Canceled)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Dial did not return after Close")
+	}
+
+	if cli.Channel() != nil {
+		t.Fatal("expected retired late-success dial to leave no active channel")
+	}
+	if conn.IsActive() {
+		t.Fatal("expected Close to close the late-connected underlying connection")
+	}
+	if got := atomic.LoadInt32(&closedCount); got != 1 {
+		t.Fatalf("OnChannelClosed called %d times, want 1", got)
+	}
+}
+
 func TestClient_StaleSessionCloseCallbackDoesNotClearNewSession(t *testing.T) {
 	trans := &fakeTransport{}
 	firstConn := &fakeConn{}
@@ -451,6 +519,52 @@ func TestClient_ClosePropagatesCallerErrorOnce(t *testing.T) {
 	}
 	if conn.IsActive() {
 		t.Fatal("expected Close to close the underlying connection")
+	}
+}
+
+func TestClient_CloseIsIdempotent(t *testing.T) {
+	trans := &fakeTransport{}
+	conn := &fakeConn{}
+	customErr := errors.New("client shutdown")
+	var closedCount int32
+	var closedErr error
+
+	trans.dial = func(network, addr string, driver transport.EventDriver) error {
+		_, err := driver.OnConnect(context.Background(), conn)
+		return err
+	}
+
+	cli := NewClient(
+		"tcp",
+		"127.0.0.1:18888",
+		WithTransport(trans),
+		WithRouter(noopRouter()),
+		WithOnChannelClosed(func(context.Context, less.Channel, error) {
+			atomic.AddInt32(&closedCount, 1)
+		}),
+		WithOnChannelClosed(func(_ context.Context, _ less.Channel, err error) {
+			closedErr = err
+		}),
+	)
+
+	if err := cli.Dial(context.Background()); err != nil {
+		t.Fatalf("Dial failed: %v", err)
+	}
+
+	cli.Close(customErr)
+	cli.Close(customErr)
+
+	if got := atomic.LoadInt32(&closedCount); got != 1 {
+		t.Fatalf("OnChannelClosed called %d times, want 1", got)
+	}
+	if !errors.Is(closedErr, customErr) {
+		t.Fatalf("OnChannelClosed error = %v, want %v", closedErr, customErr)
+	}
+	if cli.Channel() != nil {
+		t.Fatal("expected active channel to remain cleared after repeated Close")
+	}
+	if conn.IsActive() {
+		t.Fatal("expected repeated Close to leave the underlying connection closed")
 	}
 }
 
