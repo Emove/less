@@ -40,6 +40,24 @@ func TestNewEndpointHandler_RequiresRouter(t *testing.T) {
 	_ = NewEndpointHandler(context.Background())
 }
 
+func TestNewSrvTransHandler_Smoke(t *testing.T) {
+	handler := NewSrvTransHandler(
+		context.Background(),
+		WithRouter(testRouter()),
+	)
+	if handler == nil {
+		t.Fatal("expected compatibility wrapper to return a handler")
+	}
+
+	ctx, err := handler.OnConnect(context.Background(), &handlerTestConn{})
+	if err != nil {
+		t.Fatalf("OnConnect failed through compatibility wrapper: %v", err)
+	}
+	if got := ctx.Value(ctxChannelKey{}); got == nil {
+		t.Fatal("expected compatibility wrapper path to attach a channel to context")
+	}
+}
+
 type handlerTestAddr struct{}
 
 func (handlerTestAddr) Network() string { return "tcp" }
@@ -136,6 +154,24 @@ func TestNewEndpointHandler_ClonesDefaultOptions(t *testing.T) {
 
 	if got := len(second.ops.onChannelClosed); got != 0 {
 		t.Fatalf("expected isolated onChannelClosed hooks for second handler, got %d", got)
+	}
+}
+
+func TestEndpointHandler_OnConnect_AfterCloseReturnsEndpointClosed(t *testing.T) {
+	handler := NewEndpointHandler(
+		context.Background(),
+		WithRouter(testRouter()),
+	)
+	if err := handler.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	_, err := handler.OnConnect(context.Background(), &handlerTestConn{})
+	if err == nil {
+		t.Fatal("expected OnConnect to reject closed handler")
+	}
+	if got := err.Error(); got != "endpoint has been closed" {
+		t.Fatalf("OnConnect error = %q, want %q", got, "endpoint has been closed")
 	}
 }
 
