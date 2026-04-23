@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/emove/less"
+	"github.com/emove/less/codec/packet"
+	"github.com/emove/less/codec/payload"
 
 	"github.com/emove/less/log"
 	"github.com/emove/less/transport"
@@ -42,6 +44,19 @@ func TestServer_Run(t *testing.T) {
 
 	wg.Wait()
 	server.Shutdown(context.Background(), nil)
+}
+
+func TestServer_CodecOptionsAreAccepted(t *testing.T) {
+	srv := NewServer(
+		"127.0.0.1:18888",
+		WithPacketCodec(packet.NewVariableLengthCodec()),
+		WithPayloadCodec(payload.NewTextCodec()),
+		WithRouter(newRouter()),
+	)
+
+	if got := len(srv.ops.transOptions); got < 3 {
+		t.Fatalf("expected codec options to be appended, got %d", got)
+	}
 }
 
 func mockClient(t *testing.T) {

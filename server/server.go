@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/emove/less"
+	"github.com/emove/less/codec"
 	engine "github.com/emove/less/internal/engine"
 	"github.com/emove/less/transport"
 	"github.com/emove/less/transport/tcp"
@@ -58,7 +59,7 @@ func (srv *Server) Run() {
 
 	srv.addr = parseAddr(srv)
 
-	srv.handler = engine.NewSrvTransHandler(srv.ctx, srv.ops.transOptions...)
+	srv.handler = engine.NewEndpointHandler(srv.ctx, srv.ops.transOptions...)
 
 	go func() {
 		if err := srv.ops.transport.Listen(srv.addr, srv.handler); err != nil {
@@ -116,6 +117,18 @@ func WithOnChannelClosed(onChannelClosed ...less.OnChannelClosed) SerOption {
 func WithRouter(router less.Router) SerOption {
 	return func(ops *serverOptions) {
 		ops.transOptions = append(ops.transOptions, engine.WithRouter(router))
+	}
+}
+
+func WithPacketCodec(c codec.PacketCodec) SerOption {
+	return func(ops *serverOptions) {
+		ops.transOptions = append(ops.transOptions, engine.WithPacketCodec(c))
+	}
+}
+
+func WithPayloadCodec(c codec.PayloadCodec) SerOption {
+	return func(ops *serverOptions) {
+		ops.transOptions = append(ops.transOptions, engine.WithPayloadCodec(c))
 	}
 }
 
