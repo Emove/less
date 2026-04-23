@@ -91,7 +91,7 @@ func (r *reader) Next(n int) ([]byte, error) {
 			buf := loan.block.buf[loan.readStart : loan.readStart+n : loan.readStart+n]
 			loan.retain()
 			r.consume(n)
-			r.finishOp(loan, nil)
+			r.finishOpRetainedLoan(loan, nil)
 			return buf, nil
 		}
 	}
@@ -379,12 +379,15 @@ func (r *reader) copyBytes(n int) *block {
 }
 
 func (r *reader) finishOp(newLoan *node, newScratch *block) {
-	if r == nil || r.released {
-		return
-	}
-
 	if newLoan != nil {
 		newLoan.retain()
+	}
+	r.finishOpRetainedLoan(newLoan, newScratch)
+}
+
+func (r *reader) finishOpRetainedLoan(newLoan *node, newScratch *block) {
+	if r == nil || r.released {
+		return
 	}
 
 	oldLoan := r.loan

@@ -124,3 +124,23 @@ func TestReader_ReleaseIsIdempotentAndRejectsFurtherReads(t *testing.T) {
 		t.Fatalf("Peek() after Release error = %v, want %v", err, ErrReleased)
 	}
 }
+
+func TestReader_NextDirectPathKeepsSingleLoanReference(t *testing.T) {
+	rd := newTestReaderWithBlockSize(newChunkReader("abc"), 2)
+
+	got, err := rd.Next(2)
+	if err != nil {
+		t.Fatalf("Next() error = %v", err)
+	}
+	if string(got) != "ab" {
+		t.Fatalf("Next() = %q, want %q", got, "ab")
+	}
+	if rd.loan == nil {
+		t.Fatal("loan should be retained after direct Next()")
+	}
+	if refs := rd.loan.refs.Load(); refs != 1 {
+		t.Fatalf("loan refs = %d, want 1", refs)
+	}
+
+	rd.Release()
+}
