@@ -25,6 +25,8 @@ type retainedFrame struct {
 	released  bool
 }
 
+// NewFrame copies caller bytes into a retained frame.
+// The returned frame owns its data until Release is called.
 func NewFrame(p []byte) codec.Frame {
 	alloc := defaultAllocator
 	n := alloc.newNode(len(p))

@@ -67,6 +67,8 @@ func (w *writer) WriteBinary(p []byte) error {
 	return nil
 }
 
+// WriteFrame retains the frame while copying its bytes into the writer.
+// Callers still own and must release their frame.
 func (w *writer) WriteFrame(f codec.Frame) error {
 	if f == nil {
 		return nil
@@ -87,6 +89,8 @@ func (w *writer) WriteFrame(f codec.Frame) error {
 	return nil
 }
 
+// Append transfers the source writer contents on success.
+// The source becomes empty and may be released safely afterwards.
 func (w *writer) Append(src codec.WriterBuffer) error {
 	if src == nil {
 		return nil

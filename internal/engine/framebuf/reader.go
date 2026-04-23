@@ -44,6 +44,8 @@ func newReader(src io.Reader, alloc *allocator, blockSize int) *reader {
 	}
 }
 
+// Peek returns borrowed bytes that remain valid until the next reader
+// operation or Release.
 func (r *reader) Peek(n int) ([]byte, error) {
 	if err := r.checkReleased(); err != nil {
 		return nil, err
@@ -71,6 +73,8 @@ func (r *reader) Peek(n int) ([]byte, error) {
 	return scratch.buf[:n:n], nil
 }
 
+// Next returns borrowed bytes that remain valid until the next reader
+// operation or Release, and advances the reader by n bytes.
 func (r *reader) Next(n int) ([]byte, error) {
 	if err := r.checkReleased(); err != nil {
 		return nil, err
