@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/emove/less"
 	stdio "io"
 	"net"
 	"sync"
@@ -12,8 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emove/less"
+
 	"github.com/emove/less/log"
-	"github.com/emove/less/router"
 	"github.com/emove/less/transport"
 )
 
@@ -153,7 +153,7 @@ func newOutboundMiddleware() less.Middleware {
 	}
 }
 
-func newRouter() router.Router {
+func newRouter() less.Router {
 	return func(ctx context.Context, channel less.Channel, msg interface{}) (less.Handler, error) {
 		once := sync.Once{}
 		return func(ctx context.Context, ch less.Channel, message interface{}) error {
@@ -176,9 +176,9 @@ type shutdownConn struct {
 	closed int32
 }
 
-func (c *shutdownConn) Read(buf []byte) (int, error) { return 0, nil }
+func (c *shutdownConn) Read(buf []byte) (int, error)  { return 0, nil }
 func (c *shutdownConn) Write(buf []byte) (int, error) { return len(buf), nil }
-func (c *shutdownConn) IsActive() bool               { return atomic.LoadInt32(&c.closed) == 0 }
+func (c *shutdownConn) IsActive() bool                { return atomic.LoadInt32(&c.closed) == 0 }
 func (c *shutdownConn) Close() error {
 	atomic.StoreInt32(&c.closed, 1)
 	return nil

@@ -7,7 +7,6 @@ import (
 
 	"github.com/emove/less"
 	engine "github.com/emove/less/internal/engine"
-	"github.com/emove/less/router"
 	"github.com/emove/less/transport"
 	"github.com/emove/less/transport/tcp"
 )
@@ -114,7 +113,7 @@ func WithOnChannelClosed(onChannelClosed ...less.OnChannelClosed) SerOption {
 }
 
 // WithRouter sets message router
-func WithRouter(router router.Router) SerOption {
+func WithRouter(router less.Router) SerOption {
 	return func(ops *serverOptions) {
 		ops.transOptions = append(ops.transOptions, engine.WithRouter(router))
 	}

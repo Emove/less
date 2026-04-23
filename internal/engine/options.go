@@ -7,7 +7,6 @@ import (
 	"github.com/emove/less/codec"
 	"github.com/emove/less/codec/packet"
 	"github.com/emove/less/codec/payload"
-	"github.com/emove/less/router"
 )
 
 type Option func(ops *options)
@@ -20,7 +19,7 @@ type options struct {
 	payloadCodec          codec.PayloadCodec
 	onChannel             []less.OnChannel
 	onChannelClosed       []less.OnChannelClosed
-	router                router.Router
+	router                less.Router
 	inbound               []less.Middleware
 	outbound              []less.Middleware
 }
@@ -89,7 +88,7 @@ func AddOutboundMiddleware(outbound ...less.Middleware) Option {
 	}
 }
 
-func WithRouter(router router.Router) Option {
+func WithRouter(router less.Router) Option {
 	return func(ops *options) {
 		ops.router = router
 	}

@@ -2,11 +2,11 @@ package engine
 
 import (
 	"context"
+
 	"github.com/emove/less"
-	"github.com/emove/less/router"
 )
 
-func NewRouterMiddleware(router router.Router) less.Middleware {
+func NewRouterMiddleware(router less.Router) less.Middleware {
 	return func(handler less.Handler) less.Handler {
 		return func(ctx context.Context, ch less.Channel, message interface{}) error {
 			//if err := handler(ctx, ch, message);err != nil {

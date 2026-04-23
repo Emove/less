@@ -13,7 +13,6 @@ import (
 	"github.com/emove/less/codec"
 	"github.com/emove/less/codec/payload"
 	"github.com/emove/less/internal/engine/framebuf"
-	"github.com/emove/less/router"
 )
 
 func Test_newRouter(t *testing.T) {
@@ -69,8 +68,8 @@ func (handlerTestAddr) String() string  { return "127.0.0.1:19999" }
 type handlerTestConn struct {
 	closed     int32
 	closeCount int32
-	readChunks  [][]byte
-	writeErr    error
+	readChunks [][]byte
+	writeErr   error
 }
 
 func (c *handlerTestConn) Read(buf []byte) (int, error) {
@@ -88,7 +87,7 @@ func (c *handlerTestConn) Write(buf []byte) (int, error) {
 	}
 	return len(buf), nil
 }
-func (c *handlerTestConn) IsActive() bool               { return atomic.LoadInt32(&c.closed) == 0 }
+func (c *handlerTestConn) IsActive() bool { return atomic.LoadInt32(&c.closed) == 0 }
 func (c *handlerTestConn) Close() error {
 	atomic.AddInt32(&c.closeCount, 1)
 	atomic.StoreInt32(&c.closed, 1)
@@ -97,7 +96,7 @@ func (c *handlerTestConn) Close() error {
 func (c *handlerTestConn) LocalAddr() net.Addr  { return handlerTestAddr{} }
 func (c *handlerTestConn) RemoteAddr() net.Addr { return handlerTestAddr{} }
 
-func testRouter() router.Router {
+func testRouter() less.Router {
 	return func(ctx context.Context, ch less.Channel, msg interface{}) (less.Handler, error) {
 		return func(context.Context, less.Channel, interface{}) error {
 			return nil

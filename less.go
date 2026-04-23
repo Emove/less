@@ -57,3 +57,6 @@ func Chain(ms ...Middleware) Middleware {
 		return next
 	}
 }
+
+// Router defines router func, the ctx is which be returned on OnChannel hook
+type Router func(ctx context.Context, channel Channel, msg interface{}) (Handler, error)
