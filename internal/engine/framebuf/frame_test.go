@@ -213,18 +213,37 @@ func TestWriter_AppendAndFlushPreservesSegmentOrder(t *testing.T) {
 	}
 }
 
-func TestReader_CompactsConsumedPrefix(t *testing.T) {
+func TestReader_ConsumedPrefixKeepsUnreadBytesOnHeadNode(t *testing.T) {
 	rd := NewReader(bytes.NewBufferString("hello world")).(*reader)
 
-	if _, err := rd.Next(6); err != nil {
-		t.Fatalf("Next() error = %v", err)
+	if err := rd.Skip(6); err != nil {
+		t.Fatalf("Skip() error = %v", err)
 	}
 
-	if got := rd.pos; got != 0 {
-		t.Fatalf("pos after compaction = %d, want 0", got)
+	typ := reflect.TypeOf(*rd)
+	if _, ok := typ.FieldByName("buf"); ok {
+		t.Fatal("reader should not keep a shadow buffer field")
 	}
-	if got := string(rd.buf); got != "world" {
-		t.Fatalf("buf after compaction = %q, want %q", got, "world")
+	if _, ok := typ.FieldByName("pos"); ok {
+		t.Fatal("reader should not keep a shadow buffer cursor")
+	}
+	if rd.head == nil {
+		t.Fatal("reader head = nil, want unread bytes on head node")
+	}
+	if rd.tail != rd.head {
+		t.Fatal("reader tail should still point at the unread head node")
+	}
+	if got := rd.Len(); got != 5 {
+		t.Fatalf("Len() after Skip() = %d, want 5", got)
+	}
+	if got := rd.head.readStart; got != 6 {
+		t.Fatalf("head.readStart after Skip() = %d, want 6", got)
+	}
+	if got := rd.head.readEnd; got != 11 {
+		t.Fatalf("head.readEnd after Skip() = %d, want 11", got)
+	}
+	if got := string(rd.head.readable()); got != "world" {
+		t.Fatalf("head readable bytes = %q, want %q", got, "world")
 	}
 }
 

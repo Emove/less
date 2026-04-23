@@ -16,8 +16,6 @@ type reader struct {
 	tail *node
 
 	length int
-	buf    []byte
-	pos    int
 
 	scratch *block
 	loan    *node
@@ -180,8 +178,6 @@ func (r *reader) Release() {
 	r.head = nil
 	r.tail = nil
 	r.length = 0
-	r.buf = nil
-	r.pos = 0
 	r.src = nil
 }
 
@@ -300,7 +296,6 @@ func (r *reader) consume(n int) {
 		n -= take
 
 		if cur.readStart < cur.readEnd {
-			r.snapshotUnread()
 			return
 		}
 
@@ -311,8 +306,6 @@ func (r *reader) consume(n int) {
 		cur.next = nil
 		cur.release()
 	}
-
-	r.snapshotUnread()
 }
 
 func (r *reader) collectSpans(n int) ([]span, error) {
@@ -406,30 +399,4 @@ func (r *reader) finishOpRetainedLoan(newLoan *node, newScratch *block) {
 	if oldScratch != nil {
 		r.alloc.putBlock(oldScratch)
 	}
-}
-
-func (r *reader) snapshotUnread() {
-	if r == nil || r.released {
-		return
-	}
-	if r.length <= 0 {
-		r.buf = r.buf[:0]
-		r.pos = 0
-		return
-	}
-
-	if cap(r.buf) < r.length {
-		r.buf = make([]byte, r.length)
-	} else {
-		r.buf = r.buf[:r.length]
-	}
-
-	offset := 0
-	for cur := r.head; cur != nil && offset < len(r.buf); cur = cur.next {
-		if cur.readEnd <= cur.readStart {
-			continue
-		}
-		offset += copy(r.buf[offset:], cur.readable())
-	}
-	r.pos = 0
 }
