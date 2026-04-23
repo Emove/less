@@ -190,7 +190,10 @@ type blockingTransport struct {
 	driver  transport.EventDriver
 	started chan struct{}
 	done    chan struct{}
+	once    sync.Once
 }
+
+var _ transport.Transport = (*blockingTransport)(nil)
 
 func newBlockingTransport() *blockingTransport {
 	return &blockingTransport{
@@ -201,7 +204,14 @@ func newBlockingTransport() *blockingTransport {
 
 func (t *blockingTransport) Listen(addr string, driver transport.EventDriver) error {
 	t.driver = driver
-	close(t.started)
+	t.once.Do(func() { close(t.started) })
+	<-t.done
+	return nil
+}
+
+func (t *blockingTransport) Dial(network, addr string, driver transport.EventDriver) error {
+	t.driver = driver
+	t.once.Do(func() { close(t.started) })
 	<-t.done
 	return nil
 }
@@ -215,19 +225,20 @@ func (t *blockingTransport) Close() {
 }
 
 func TestServer_Shutdown_ClosesActiveConnections(t *testing.T) {
-	trans := newBlockingTransport()
+	blocking := newBlockingTransport()
+	var trans transport.Transport = blocking
 	srv := NewServer("127.0.0.1:18888", WithTransport(trans), WithRouter(newRouter()))
 
 	srv.Run()
 
 	select {
-	case <-trans.started:
+	case <-blocking.started:
 	case <-time.After(time.Second):
 		t.Fatal("server did not start transport listener")
 	}
 
 	conn := &shutdownConn{}
-	if _, err := trans.driver.OnConnect(context.Background(), conn); err != nil {
+	if _, err := blocking.driver.OnConnect(context.Background(), conn); err != nil {
 		t.Fatalf("OnConnect failed: %v", err)
 	}
 
