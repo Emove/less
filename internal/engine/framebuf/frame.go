@@ -44,11 +44,14 @@ func newFrameFromSpans(alloc *allocator, spans []span) codec.Frame {
 		alloc = defaultAllocator
 	}
 
-	owned := append([]span(nil), spans...)
-	for i := range owned {
-		if owned[i].node != nil {
-			owned[i].node.retain()
+	owned := make([]span, 0, len(spans))
+	for _, sp := range spans {
+		normalized, ok := normalizeSpan(sp)
+		if !ok {
+			continue
 		}
+		normalized.node.retain()
+		owned = append(owned, normalized)
 	}
 
 	f := &retainedFrame{
@@ -57,6 +60,31 @@ func newFrameFromSpans(alloc *allocator, spans []span) codec.Frame {
 	}
 	f.refs.Store(1)
 	return f
+}
+
+func normalizeSpan(sp span) (span, bool) {
+	if sp.node == nil || sp.node.block == nil {
+		return span{}, false
+	}
+
+	start := sp.start
+	if start < 0 {
+		start = 0
+	}
+	end := sp.end
+	if end < start {
+		end = start
+	}
+	if end > len(sp.node.block.buf) {
+		end = len(sp.node.block.buf)
+	}
+	if end <= start {
+		return span{}, false
+	}
+
+	sp.start = start
+	sp.end = end
+	return sp, true
 }
 
 func (f *retainedFrame) Bytes() []byte {
@@ -81,6 +109,9 @@ func (f *retainedFrame) Bytes() []byte {
 		if sp.node == nil || sp.node.block == nil {
 			return nil
 		}
+		if sp.start < 0 || sp.end < sp.start || sp.end > len(sp.node.block.buf) {
+			return nil
+		}
 		return sp.node.block.buf[sp.start:sp.end:sp.end]
 	}
 
@@ -102,6 +133,9 @@ func (f *retainedFrame) Bytes() []byte {
 	offset := 0
 	for _, sp := range f.spans {
 		if sp.node == nil || sp.node.block == nil || sp.end <= sp.start {
+			continue
+		}
+		if sp.start < 0 || sp.end > len(sp.node.block.buf) || sp.end < sp.start {
 			continue
 		}
 		offset += copy(f.flat[offset:], sp.node.block.buf[sp.start:sp.end])

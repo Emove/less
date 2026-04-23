@@ -86,6 +86,29 @@ func TestFrame_MultiSpanLazyFlattensAndReleaseIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestFrame_NewFrameFromSpansNormalizesInvalidSpans(t *testing.T) {
+	a := newAllocator()
+	n := a.newReadonlyNode([]byte("hello"))
+
+	frame := newFrameFromSpans(a, []span{
+		{},
+		{node: nil, start: 0, end: 5},
+		{node: n, start: -3, end: 99},
+		{node: n, start: 4, end: 4},
+	})
+	defer frame.Release()
+
+	if got := n.refs.Load(); got != 2 {
+		t.Fatalf("node refs after frame creation = %d, want 2", got)
+	}
+
+	n.release()
+
+	if got := string(frame.Bytes()); got != "hello" {
+		t.Fatalf("Bytes() = %q, want %q", got, "hello")
+	}
+}
+
 func TestFrame_RetainReleaseIsRaceSafeByContract(t *testing.T) {
 	frame := NewFrame([]byte("hello"))
 	var wg sync.WaitGroup
