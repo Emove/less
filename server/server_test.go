@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -12,8 +13,8 @@ import (
 	"time"
 
 	"github.com/emove/less"
-	"github.com/emove/less/codec/packet"
-	"github.com/emove/less/codec/payload"
+	"github.com/emove/less/codec"
+	"github.com/emove/less/internal/engine/framebuf"
 
 	"github.com/emove/less/log"
 	"github.com/emove/less/transport"
@@ -47,17 +48,94 @@ func TestServer_Run(t *testing.T) {
 }
 
 func TestServer_CodecOptionsAreAccepted(t *testing.T) {
+	transport := newBlockingTransport()
+	var captured less.Channel
+	packetCodec := stubServerPacketCodec{}
+	payloadCodec := stubServerPayloadCodec{}
+
 	srv := NewServer(
 		"127.0.0.1:18888",
-		WithPacketCodec(packet.NewVariableLengthCodec()),
-		WithPayloadCodec(payload.NewTextCodec()),
-		WithRouter(newRouter()),
+		WithTransport(transport),
+		WithPacketCodec(packetCodec),
+		WithPayloadCodec(payloadCodec),
+		WithOnChannel(func(ctx context.Context, ch less.Channel) (context.Context, error) {
+			captured = ch
+			return ctx, nil
+		}),
+		WithRouter(func(ctx context.Context, ch less.Channel, msg interface{}) (less.Handler, error) {
+			return func(context.Context, less.Channel, interface{}) error {
+				return nil
+			}, nil
+		}),
 	)
 
-	if got := len(srv.ops.transOptions); got < 3 {
-		t.Fatalf("expected codec options to be appended, got %d", got)
+	srv.Run()
+
+	select {
+	case <-transport.started:
+	case <-time.After(time.Second):
+		t.Fatal("server did not start transport listener")
 	}
+
+	conn := &captureConn{}
+	if _, err := transport.driver.OnConnect(context.Background(), conn); err != nil {
+		t.Fatalf("OnConnect failed: %v", err)
+	}
+	if captured == nil {
+		t.Fatal("expected OnChannel to capture an active channel")
+	}
+
+	if err := captured.Write("hello"); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	if got := conn.String(); got != "pkt<msg:hello>" {
+		t.Fatalf("connection bytes = %q, want %q", got, "pkt<msg:hello>")
+	}
+
+	srv.Shutdown(context.Background(), nil)
 }
+
+type stubServerPacketCodec struct{}
+
+func (stubServerPacketCodec) Name() string { return "stub-server-packet" }
+func (stubServerPacketCodec) Encode(dst codec.WriterBuffer, payload codec.Frame) error {
+	if err := dst.WriteBinary([]byte("pkt<")); err != nil {
+		return err
+	}
+	if err := dst.WriteFrame(payload); err != nil {
+		return err
+	}
+	return dst.WriteBinary([]byte(">"))
+}
+func (stubServerPacketCodec) Decode(src codec.ReaderBuffer) (codec.Frame, error) {
+	return nil, errors.New("Decode not expected in this test")
+}
+
+type stubServerPayloadCodec struct{}
+
+func (stubServerPayloadCodec) Name() string { return "stub-server-payload" }
+func (stubServerPayloadCodec) Marshal(message any) (codec.Frame, error) {
+	return framebuf.NewFrame([]byte("msg:" + message.(string))), nil
+}
+func (stubServerPayloadCodec) Unmarshal(payload codec.Frame) (any, error) {
+	return string(payload.Bytes()), nil
+}
+
+type captureConn struct {
+	bytes.Buffer
+	closed int32
+}
+
+func (c *captureConn) Read(buf []byte) (int, error)  { return 0, stdio.EOF }
+func (c *captureConn) Write(buf []byte) (int, error) { return c.Buffer.Write(buf) }
+func (c *captureConn) IsActive() bool                { return atomic.LoadInt32(&c.closed) == 0 }
+func (c *captureConn) Close() error {
+	atomic.StoreInt32(&c.closed, 1)
+	return nil
+}
+func (c *captureConn) LocalAddr() net.Addr  { return shutdownAddr{} }
+func (c *captureConn) RemoteAddr() net.Addr { return shutdownAddr{} }
 
 func mockClient(t *testing.T) {
 	con, err := net.Dial("tcp", "localhost:8888")

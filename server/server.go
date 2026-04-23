@@ -120,13 +120,21 @@ func WithRouter(router less.Router) SerOption {
 	}
 }
 
+// WithPacketCodec sets the packet codec used by the server transport engine.
 func WithPacketCodec(c codec.PacketCodec) SerOption {
+	if c == nil {
+		panic("packet codec can not be nil")
+	}
 	return func(ops *serverOptions) {
 		ops.transOptions = append(ops.transOptions, engine.WithPacketCodec(c))
 	}
 }
 
+// WithPayloadCodec sets the payload codec used by the server transport engine.
 func WithPayloadCodec(c codec.PayloadCodec) SerOption {
+	if c == nil {
+		panic("payload codec can not be nil")
+	}
 	return func(ops *serverOptions) {
 		ops.transOptions = append(ops.transOptions, engine.WithPayloadCodec(c))
 	}
