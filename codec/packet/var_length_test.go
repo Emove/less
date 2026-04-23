@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"github.com/emove/less/codec"
 	"github.com/emove/less/internal/engine/framebuf"
+	"io"
 	"reflect"
 	"testing"
 )
@@ -66,4 +67,42 @@ func reader(msg []byte) codec.ReaderBuffer {
 	buff.Write(header)
 	buff.Write(msg)
 	return framebuf.NewReader(buff)
+}
+
+type chunkedBytesReader struct {
+	chunks [][]byte
+	index  int
+}
+
+func (r *chunkedBytesReader) Read(p []byte) (int, error) {
+	if r.index >= len(r.chunks) {
+		return 0, io.EOF
+	}
+	chunk := r.chunks[r.index]
+	r.index++
+	return copy(p, chunk), nil
+}
+
+func TestVariableLengthCodec_DecodeFragmentedHeaderAndBody(t *testing.T) {
+	reader := framebuf.NewReader(&chunkedBytesReader{
+		chunks: [][]byte{
+			{0},
+			{0},
+			{0},
+			{5},
+			{'h'},
+			{'e', 'l'},
+			{'l', 'o'},
+		},
+	})
+
+	frame, err := NewVariableLengthCodec().Decode(reader)
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	defer frame.Release()
+
+	if got := string(frame.Bytes()); got != "hello" {
+		t.Fatalf("frame.Bytes() = %q, want %q", got, "hello")
+	}
 }

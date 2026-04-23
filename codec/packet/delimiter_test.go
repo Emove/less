@@ -3,6 +3,7 @@ package packet
 import (
 	"bytes"
 	"github.com/emove/less/internal/engine/framebuf"
+	"io"
 	"reflect"
 	"testing"
 )
@@ -77,5 +78,34 @@ func Test_delimiterCodec_Encode(t *testing.T) {
 			t.Errorf("Encode() error want: %s, got: %s", buff.String(), string(tt.want))
 		}
 		buff.Reset()
+	}
+}
+
+type chunkedStringReader struct {
+	chunks []string
+	index  int
+}
+
+func (r *chunkedStringReader) Read(p []byte) (int, error) {
+	if r.index >= len(r.chunks) {
+		return 0, io.EOF
+	}
+	chunk := r.chunks[r.index]
+	r.index++
+	return copy(p, chunk), nil
+}
+
+func TestDelimiterCodec_DecodeFragmentedDelimiter(t *testing.T) {
+	codec := NewDelimiterCodec("\r\n", 32)
+	reader := framebuf.NewReader(&chunkedStringReader{chunks: []string{"hel", "lo\r", "\n"}})
+
+	frame, err := codec.Decode(reader)
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	defer frame.Release()
+
+	if got := string(frame.Bytes()); got != "hello" {
+		t.Fatalf("frame.Bytes() = %q, want %q", got, "hello")
 	}
 }
