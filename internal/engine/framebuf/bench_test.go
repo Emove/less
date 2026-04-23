@@ -111,6 +111,9 @@ func BenchmarkWriterWriteFrame(b *testing.B) {
 		if err := w.WriteFrame(payload); err != nil {
 			b.Fatal(err)
 		}
+		if err := w.FlushTo(io.Discard); err != nil {
+			b.Fatal(err)
+		}
 		w.Release()
 	}
 }
@@ -133,6 +136,9 @@ func BenchmarkWriterAppend(b *testing.B) {
 			b.Fatal(err)
 		}
 		if err := dst.Append(src); err != nil {
+			b.Fatal(err)
+		}
+		if err := dst.FlushTo(io.Discard); err != nil {
 			b.Fatal(err)
 		}
 
