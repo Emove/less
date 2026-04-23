@@ -135,7 +135,11 @@ func (w *writer) Len() int {
 }
 
 func (w *writer) FlushTo(dst io.Writer) error {
-	if w == nil || w.released || w.head == nil {
+	if w == nil || w.released {
+		return nil
+	}
+	if w.head == nil {
+		w.releaseFrames()
 		return nil
 	}
 
@@ -177,6 +181,7 @@ func (w *writer) FlushTo(dst io.Writer) error {
 	w.head = nil
 	w.tail = nil
 	w.length = 0
+	w.releaseFrames()
 	return nil
 }
 

@@ -83,6 +83,35 @@ func TestWriter_WriteFrameRetainsCallerOwnership(t *testing.T) {
 	}
 }
 
+func TestWriter_FlushSuccessReleasesRetainedFrames(t *testing.T) {
+	frame := &trackedFrame{buf: []byte("hello")}
+	w := NewWriter().(*writer)
+
+	if err := w.WriteFrame(frame); err != nil {
+		t.Fatalf("WriteFrame() error = %v", err)
+	}
+	frame.Release()
+
+	var out bytes.Buffer
+	if err := w.FlushTo(&out); err != nil {
+		t.Fatalf("FlushTo() error = %v", err)
+	}
+	if got := out.String(); got != "hello" {
+		t.Fatalf("FlushTo() = %q, want %q", got, "hello")
+	}
+	if got := len(w.frames); got != 0 {
+		t.Fatalf("len(w.frames) after FlushTo() = %d, want 0", got)
+	}
+	if got := frame.releases; got != 2 {
+		t.Fatalf("frame releases after FlushTo() = %d, want 2", got)
+	}
+
+	w.Release()
+	if got := frame.releases; got != 2 {
+		t.Fatalf("frame releases after Release() = %d, want 2", got)
+	}
+}
+
 func TestWriter_AppendTransfersSourceAndReleaseIsNoop(t *testing.T) {
 	frame := &trackedFrame{buf: []byte("hello")}
 	src := NewWriter().(*writer)
