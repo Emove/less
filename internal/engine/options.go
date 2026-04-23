@@ -52,6 +52,7 @@ func MaxReceiveMessageSize(size uint32) Option {
 	}
 }
 
+// Keep codec configuration on the shared endpoint option surface.
 func WithPacketCodec(codec codec.PacketCodec) Option {
 	return func(ops *options) {
 		ops.packetCodec = codec

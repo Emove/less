@@ -30,34 +30,14 @@ func Test_newRouter(t *testing.T) {
 	_ = mw(nilHandler)(context.Background(), nil, "router test")
 }
 
-func TestNewSrvTransHandler_RejectsMissingRouterAtConstruction(t *testing.T) {
-	// The long-term contract is construction-time rejection when router is missing.
-	// With the current API shape (no error return), we accept either a panic or a
-	// nil handler as the rejection signal, but we do not want silent acceptance.
-	var (
-		panicked bool
-		handler  TransHandler
-	)
-
-	func() {
-		defer func() {
-			if recover() != nil {
-				panicked = true
-			}
-		}()
-
-		handler = NewSrvTransHandler(context.Background())
+func TestNewEndpointHandler_RequiresRouter(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic when router is missing")
+		}
 	}()
 
-	if panicked {
-		return
-	}
-
-	if handler == nil {
-		return
-	}
-
-	t.Fatal("expected NewSrvTransHandler to reject a missing router at construction time, but it accepted the configuration without panic or explicit failure")
+	_ = NewEndpointHandler(context.Background())
 }
 
 type handlerTestAddr struct{}
@@ -104,10 +84,10 @@ func testRouter() less.Router {
 	}
 }
 
-func TestSrvTransHandler_OnConnClosed_DoesNotDoubleFireClosedCallbacks(t *testing.T) {
+func TestEndpointHandler_OnConnClosed_DoesNotDoubleFireClosedCallbacks(t *testing.T) {
 	var closedCount int32
 
-	handler := NewSrvTransHandler(
+	handler := NewEndpointHandler(
 		context.Background(),
 		WithRouter(testRouter()),
 		AddOnChannelClosed(func(ctx context.Context, ch less.Channel, err error) {
@@ -138,20 +118,20 @@ func TestSrvTransHandler_OnConnClosed_DoesNotDoubleFireClosedCallbacks(t *testin
 	}
 }
 
-func TestNewSrvTransHandler_ClonesDefaultOptions(t *testing.T) {
-	first := NewSrvTransHandler(
+func TestNewEndpointHandler_ClonesDefaultOptions(t *testing.T) {
+	first := NewEndpointHandler(
 		context.Background(),
 		WithRouter(testRouter()),
 		AddOnChannelClosed(func(context.Context, less.Channel, error) {}),
-	).(*svrTransHandler)
+	).(*endpointTransHandler)
 
-	second := NewSrvTransHandler(
+	second := NewEndpointHandler(
 		context.Background(),
 		WithRouter(testRouter()),
-	).(*svrTransHandler)
+	).(*endpointTransHandler)
 
 	if first.ops == second.ops {
-		t.Fatal("expected NewSrvTransHandler to clone default options per instance")
+		t.Fatal("expected NewEndpointHandler to clone default options per instance")
 	}
 
 	if got := len(second.ops.onChannelClosed); got != 0 {
@@ -205,10 +185,10 @@ func (s stubPayloadCodec) Unmarshal(payload codec.Frame) (any, error) {
 	return string(payload.Bytes()), nil
 }
 
-func TestSrvTransHandler_OnMessage_ReleasesFrameWhenUnmarshalFails(t *testing.T) {
+func TestEndpointHandler_OnMessage_ReleasesFrameWhenUnmarshalFails(t *testing.T) {
 	var releaseCount int32
 
-	handler := NewSrvTransHandler(
+	handler := NewEndpointHandler(
 		context.Background(),
 		WithRouter(testRouter()),
 		WithPacketCodec(stubPacketCodec{
@@ -240,10 +220,10 @@ func TestSrvTransHandler_OnMessage_ReleasesFrameWhenUnmarshalFails(t *testing.T)
 	}
 }
 
-func TestSrvTransHandler_OnMessage_ReleasesFrameWhenUnmarshalPanics(t *testing.T) {
+func TestEndpointHandler_OnMessage_ReleasesFrameWhenUnmarshalPanics(t *testing.T) {
 	var releaseCount int32
 
-	handler := NewSrvTransHandler(
+	handler := NewEndpointHandler(
 		context.Background(),
 		WithRouter(testRouter()),
 		WithPacketCodec(stubPacketCodec{
@@ -286,7 +266,7 @@ func (sequentialPacketCodec) Decode(src codec.ReaderBuffer) (codec.Frame, error)
 	return src.Slice(int(header[0]))
 }
 
-func TestSrvTransHandler_OnMessage_ReusesReaderAcrossCalls(t *testing.T) {
+func TestEndpointHandler_OnMessage_ReusesReaderAcrossCalls(t *testing.T) {
 	var handled []string
 	router := func(ctx context.Context, ch less.Channel, msg interface{}) (less.Handler, error) {
 		return func(ctx context.Context, ch less.Channel, message interface{}) error {
@@ -300,7 +280,7 @@ func TestSrvTransHandler_OnMessage_ReusesReaderAcrossCalls(t *testing.T) {
 			[]byte{5, 'h', 'e', 'l', 'l', 'o', 5, 'w', 'o', 'r', 'l', 'd'},
 		},
 	}
-	handler := NewSrvTransHandler(
+	handler := NewEndpointHandler(
 		context.Background(),
 		WithRouter(router),
 		WithPacketCodec(sequentialPacketCodec{}),
@@ -333,7 +313,7 @@ func TestSrvTransHandler_OnMessage_ReusesReaderAcrossCalls(t *testing.T) {
 func TestWriteHandler_ClosesChannelWhenFlushFails(t *testing.T) {
 	var closedCount int32
 	conn := &handlerTestConn{writeErr: errors.New("flush failed")}
-	handler := NewSrvTransHandler(
+	handler := NewEndpointHandler(
 		context.Background(),
 		WithRouter(testRouter()),
 		AddOnChannelClosed(func(ctx context.Context, ch less.Channel, err error) {

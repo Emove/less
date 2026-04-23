@@ -30,7 +30,9 @@ type TransHandler interface {
 	Close() error
 }
 
-func NewSrvTransHandler(ctx context.Context, ops ...Option) TransHandler {
+const errEndpointClosed = "endpoint has been closed"
+
+func NewEndpointHandler(ctx context.Context, ops ...Option) TransHandler {
 	opts := defaultTransOptions()
 	for _, op := range ops {
 		op(opts)
@@ -38,7 +40,7 @@ func NewSrvTransHandler(ctx context.Context, ops ...Option) TransHandler {
 	if opts.router == nil {
 		panic("router is required")
 	}
-	th := &svrTransHandler{
+	th := &endpointTransHandler{
 		ops:          opts,
 		ctx:          ctx,
 		channelCount: less_atomic.AtomicInt64(0),
@@ -58,14 +60,18 @@ func NewSrvTransHandler(ctx context.Context, ops ...Option) TransHandler {
 	return th
 }
 
-var _ TransHandler = (*svrTransHandler)(nil)
+func NewSrvTransHandler(ctx context.Context, ops ...Option) TransHandler {
+	return NewEndpointHandler(ctx, ops...)
+}
+
+var _ TransHandler = (*endpointTransHandler)(nil)
 
 const (
 	serving = iota
 	closed
 )
 
-type svrTransHandler struct {
+type endpointTransHandler struct {
 	state           int32
 	ops             *options
 	ctx             context.Context
@@ -74,10 +80,10 @@ type svrTransHandler struct {
 	channels        sync.Map
 }
 
-func (th *svrTransHandler) OnConnect(ctx context.Context, con transport.Connection) (c context.Context, err error) {
+func (th *endpointTransHandler) OnConnect(ctx context.Context, con transport.Connection) (c context.Context, err error) {
 
 	if !th.isActive() {
-		return ctx, errors.New("server has been shutdown")
+		return ctx, errors.New(errEndpointClosed)
 	}
 	var ch *channel.Channel
 	defer func() {
@@ -112,8 +118,8 @@ func (th *svrTransHandler) OnConnect(ctx context.Context, con transport.Connecti
 
 	th.channels.Store(ch, struct{}{})
 	if !th.isActive() {
-		ch.Close(errors.New("server has been shutdown"))
-		return ctx, errors.New("server has been shutdown")
+		ch.Close(errors.New(errEndpointClosed))
+		return ctx, errors.New(errEndpointClosed)
 	}
 
 	ctx = context.WithValue(ctx, ctxChannelKey{}, ch)
@@ -123,10 +129,10 @@ func (th *svrTransHandler) OnConnect(ctx context.Context, con transport.Connecti
 	return ctx, nil
 }
 
-func (th *svrTransHandler) OnMessage(ctx context.Context, _ transport.Connection) error {
+func (th *endpointTransHandler) OnMessage(ctx context.Context, _ transport.Connection) error {
 
 	if !th.isActive() {
-		return errors.New("request was refused")
+		return errors.New(errEndpointClosed)
 	}
 
 	ch := ctx.Value(ctxChannelKey{}).(*channel.Channel)
@@ -137,7 +143,7 @@ func (th *svrTransHandler) OnMessage(ctx context.Context, _ transport.Connection
 	}
 	reader := resources.reader
 	if !th.isActive() {
-		return errors.New("transport was closed")
+		return errors.New(errEndpointClosed)
 	}
 
 	defer recovery.Recover(func(err error) {
@@ -165,7 +171,7 @@ func (th *svrTransHandler) OnMessage(ctx context.Context, _ transport.Connection
 	return th.OnRead(ch, msg)
 }
 
-func (th *svrTransHandler) OnConnClosed(ctx context.Context, _ transport.Connection, err error) {
+func (th *endpointTransHandler) OnConnClosed(ctx context.Context, _ transport.Connection, err error) {
 	if ctx == nil {
 		return
 	}
@@ -183,7 +189,7 @@ func (th *svrTransHandler) OnConnClosed(ctx context.Context, _ transport.Connect
 	ch.Close(err)
 }
 
-func (th *svrTransHandler) OnRead(ch *channel.Channel, msg interface{}) error {
+func (th *endpointTransHandler) OnRead(ch *channel.Channel, msg interface{}) error {
 	var err error
 	if err = ch.TriggerInbound(msg); err != nil {
 		log.Errorw("remote", ch.RemoteAddr(), log.DefaultMsgKey, msg, "err", err)
@@ -191,10 +197,10 @@ func (th *svrTransHandler) OnRead(ch *channel.Channel, msg interface{}) error {
 	return nil
 }
 
-func (th *svrTransHandler) newWriteHandler(conn transport.Connection) less.Handler {
+func (th *endpointTransHandler) newWriteHandler(conn transport.Connection) less.Handler {
 	return func(ctx context.Context, ch less.Channel, message interface{}) error {
 		if serving != atomic.LoadInt32(&th.state) {
-			return fmt.Errorf("transport has been closed")
+			return fmt.Errorf(errEndpointClosed)
 		}
 		payload, err := th.ops.payloadCodec.Marshal(message)
 		if err != nil {
@@ -214,19 +220,19 @@ func (th *svrTransHandler) newWriteHandler(conn transport.Connection) less.Handl
 	}
 }
 
-func (th *svrTransHandler) Close() error {
+func (th *endpointTransHandler) Close() error {
 	if !atomic.CompareAndSwapInt32(&th.state, serving, closed) {
 		return nil
 	}
 
 	th.channels.Range(func(key, _ interface{}) bool {
-		key.(*channel.Channel).Close(errors.New("transport has been closed"))
+		key.(*channel.Channel).Close(errors.New(errEndpointClosed))
 		return true
 	})
 	return nil
 }
 
-func (th *svrTransHandler) closeChannel(ch less.Channel) {
+func (th *endpointTransHandler) closeChannel(ch less.Channel) {
 	internal, ok := ch.(*channel.Channel)
 	if !ok {
 		return
@@ -236,6 +242,6 @@ func (th *svrTransHandler) closeChannel(ch less.Channel) {
 	}
 }
 
-func (th *svrTransHandler) isActive() bool {
+func (th *endpointTransHandler) isActive() bool {
 	return serving == atomic.LoadInt32(&th.state)
 }
