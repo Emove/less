@@ -6,9 +6,11 @@ import (
 	"net"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/emove/less"
 	"github.com/emove/less/codec"
+	"github.com/emove/less/server"
 	"github.com/emove/less/transport"
 )
 
@@ -19,39 +21,46 @@ var _ interface {
 } = (*Client)(nil)
 
 func TestClient_DialEstablishesChannel(t *testing.T) {
-	trans := &fakeTransport{}
-	conn := &fakeConn{}
-	var onChannelCalled int32
+	addr := reserveTCPAddr(t)
 
-	trans.dial = func(network, addr string, driver transport.EventDriver) error {
-		if network != "tcp" {
-			t.Fatalf("network = %q, want %q", network, "tcp")
-		}
-		if addr != "127.0.0.1:18888" {
-			t.Fatalf("addr = %q, want %q", addr, "127.0.0.1:18888")
-		}
-		_, err := driver.OnConnect(context.Background(), conn)
-		return err
-	}
+	serverOnChannelCalled := make(chan struct{}, 1)
+	srv := server.NewServer(
+		addr,
+		server.WithRouter(noopRouter()),
+		server.WithOnChannel(func(ctx context.Context, ch less.Channel) (context.Context, error) {
+			select {
+			case serverOnChannelCalled <- struct{}{}:
+			default:
+			}
+			return ctx, nil
+		}),
+	)
+	srv.Run()
+	t.Cleanup(func() { srv.Shutdown(context.Background(), nil) })
 
+	var clientOnChannelCalled int32
 	cli := NewClient(
 		"tcp",
-		"127.0.0.1:18888",
-		WithTransport(trans),
+		addr,
 		WithRouter(noopRouter()),
 		WithOnChannel(func(ctx context.Context, ch less.Channel) (context.Context, error) {
-			atomic.StoreInt32(&onChannelCalled, 1)
+			atomic.StoreInt32(&clientOnChannelCalled, 1)
 			return ctx, nil
 		}),
 	)
 	t.Cleanup(func() { cli.Close(nil) })
 
-	if err := cli.Dial(context.Background()); err != nil {
+	if err := dialClientEventually(t, cli, context.Background()); err != nil {
 		t.Fatalf("Dial failed: %v", err)
 	}
 
-	if atomic.LoadInt32(&onChannelCalled) != 1 {
-		t.Fatal("expected OnChannel hook to run")
+	select {
+	case <-serverOnChannelCalled:
+	case <-time.After(time.Second):
+		t.Fatal("expected server OnChannel hook to run")
+	}
+	if atomic.LoadInt32(&clientOnChannelCalled) != 1 {
+		t.Fatal("expected client OnChannel hook to run")
 	}
 	if cli.Channel() == nil {
 		t.Fatal("expected active channel to be captured")
@@ -181,6 +190,38 @@ func noopMiddleware() less.Middleware {
 		return func(ctx context.Context, ch less.Channel, msg interface{}) error {
 			return next(ctx, ch, msg)
 		}
+	}
+}
+
+func reserveTCPAddr(t *testing.T) string {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve tcp addr: %v", err)
+	}
+	defer func() {
+		_ = listener.Close()
+	}()
+
+	return listener.Addr().String()
+}
+
+func dialClientEventually(t *testing.T, cli *Client, ctx context.Context) error {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	var lastErr error
+	for {
+		err := cli.Dial(ctx)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if time.Now().After(deadline) {
+			return lastErr
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
