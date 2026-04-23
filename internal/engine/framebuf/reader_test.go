@@ -33,29 +33,31 @@ func (r *chunkReader) Read(p []byte) (int, error) {
 	return copy(p, chunk), nil
 }
 
-func newTestReaderWithBlockSize(src io.Reader, _ int) *reader {
-	return NewReader(src).(*reader)
+func newTestReaderWithBlockSize(src io.Reader, blockSize int) *reader {
+	return newReader(src, defaultAllocator, blockSize)
 }
 
 func TestReader_NextDoesNotCompactReturnedBorrowedSlice(t *testing.T) {
-	rd := NewReader(bytes.NewBufferString("hello world"))
+	firstChunk := bytes.Repeat([]byte("a"), 300)
+	secondChunk := bytes.Repeat([]byte("b"), 300)
+	rd := NewReader(bytes.NewBuffer(append(firstChunk, secondChunk...)))
 
-	first, err := rd.Next(6)
+	first, err := rd.Next(300)
 	if err != nil {
 		t.Fatalf("Next() error = %v", err)
 	}
-	if got := string(first); got != "hello " {
-		t.Fatalf("first Next() = %q, want %q", got, "hello ")
+	if got := string(first); got != string(firstChunk) {
+		t.Fatalf("first Next() = %q, want %q", got, string(firstChunk))
 	}
 
-	second, err := rd.Next(5)
+	second, err := rd.Next(300)
 	if err != nil {
 		t.Fatalf("second Next() error = %v", err)
 	}
-	if got := string(second); got != "world" {
-		t.Fatalf("second Next() = %q, want %q", got, "world")
+	if got := string(second); got != string(secondChunk) {
+		t.Fatalf("second Next() = %q, want %q", got, string(secondChunk))
 	}
-	if got := string(first); got != "hello " {
+	if got := string(first); got != string(firstChunk) {
 		t.Fatalf("borrowed first slice changed to %q after second read", got)
 	}
 }
