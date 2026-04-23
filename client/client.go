@@ -60,7 +60,12 @@ func defaultClientOptions() *clientOptions {
 	}
 }
 
-var errClientSessionActive = errors.New("client already has an active session")
+var (
+	errClientSessionActive  = errors.New("client already has an active session")
+	errClientSessionRetired = errors.New("client session retired during dial")
+)
+
+var newEndpointHandler = engine.NewEndpointHandler
 
 // Dial creates the endpoint handler and dials the remote transport synchronously.
 func (cli *Client) Dial(ctx context.Context) error {
@@ -79,7 +84,9 @@ func (cli *Client) Dial(ctx context.Context) error {
 	sessionID := cli.nextSessionID + 1
 	cli.nextSessionID = sessionID
 	cli.activeSessionID = sessionID
-	cli.ctx, cli.cancelFunc = context.WithCancel(ctx)
+	dialCtx, cancelFunc := context.WithCancel(ctx)
+	cli.ctx = dialCtx
+	cli.cancelFunc = cancelFunc
 	cli.channel = nil
 	cli.handler = nil
 	cli.mu.Unlock()
@@ -91,21 +98,22 @@ func (cli *Client) Dial(ctx context.Context) error {
 	)
 	options = append(options, cli.ops.transOptions...)
 
-	cli.mu.RLock()
-	dialCtx := cli.ctx
-	cli.mu.RUnlock()
+	handler := newEndpointHandler(dialCtx, options...)
 
-	handler := engine.NewEndpointHandler(dialCtx, options...)
-
-	cli.mu.Lock()
-	if cli.activeSessionID == sessionID {
-		cli.handler = handler
+	if !cli.publishHandlerIfCurrent(sessionID, handler) {
+		_ = handler.Close()
+		cancelFunc()
+		return sessionRetiredErr(dialCtx)
 	}
-	cli.mu.Unlock()
 
 	if err := cli.ops.transport.Dial(cli.network, cli.addr, handler); err != nil {
 		cli.closeSessionIfCurrent(sessionID, err, false)
 		return err
+	}
+	if !cli.sessionOwnsHandler(sessionID, handler) {
+		_ = handler.Close()
+		cancelFunc()
+		return sessionRetiredErr(dialCtx)
 	}
 
 	go cli.closeWhenDialContextDone(sessionID, ctx, dialCtx)
@@ -192,6 +200,22 @@ func (cli *Client) closeSession(err error, closeTransport bool) {
 	}
 }
 
+func (cli *Client) publishHandlerIfCurrent(sessionID uint64, handler engine.TransHandler) bool {
+	cli.mu.Lock()
+	defer cli.mu.Unlock()
+	if cli.activeSessionID != sessionID {
+		return false
+	}
+	cli.handler = handler
+	return true
+}
+
+func (cli *Client) sessionOwnsHandler(sessionID uint64, handler engine.TransHandler) bool {
+	cli.mu.RLock()
+	defer cli.mu.RUnlock()
+	return cli.activeSessionID == sessionID && cli.handler == handler
+}
+
 func (cli *Client) captureChannel(sessionID uint64) less.OnChannel {
 	return func(ctx context.Context, ch less.Channel) (context.Context, error) {
 		cli.mu.Lock()
@@ -231,6 +255,15 @@ func (cli *Client) retireSessionIfCurrent(sessionID uint64) bool {
 		cancelFunc()
 	}
 	return true
+}
+
+func sessionRetiredErr(ctx context.Context) error {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	return errClientSessionRetired
 }
 
 // WithTransport sets the transport used by the client.

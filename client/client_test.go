@@ -11,6 +11,7 @@ import (
 
 	"github.com/emove/less"
 	"github.com/emove/less/codec"
+	engine "github.com/emove/less/internal/engine"
 	"github.com/emove/less/server"
 	"github.com/emove/less/transport"
 )
@@ -240,6 +241,128 @@ func TestClient_RemoteDisconnectClearsSessionAndAllowsRedial(t *testing.T) {
 	}
 	if cli.Channel() == firstChannel {
 		t.Fatal("expected redial to replace the retired channel")
+	}
+}
+
+func TestClient_CloseDuringDialPreventsOrphanedSession(t *testing.T) {
+	originalNewEndpointHandler := newEndpointHandler
+	t.Cleanup(func() {
+		newEndpointHandler = originalNewEndpointHandler
+	})
+
+	handlerBuilt := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	newEndpointHandler = func(ctx context.Context, ops ...engine.Option) engine.TransHandler {
+		handler := originalNewEndpointHandler(ctx, ops...)
+		close(handlerBuilt)
+		<-releaseHandler
+		return handler
+	}
+
+	trans := &fakeTransport{}
+	trans.dial = func(network, addr string, driver transport.EventDriver) error {
+		_, err := driver.OnConnect(context.Background(), &fakeConn{})
+		return err
+	}
+
+	cli := NewClient(
+		"tcp",
+		"127.0.0.1:18888",
+		WithTransport(trans),
+		WithRouter(noopRouter()),
+	)
+	t.Cleanup(func() { cli.Close(nil) })
+
+	dialDone := make(chan error, 1)
+	go func() {
+		dialDone <- cli.Dial(context.Background())
+	}()
+
+	<-handlerBuilt
+	cli.Close(errors.New("client closed during dial"))
+	close(releaseHandler)
+
+	select {
+	case err := <-dialDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Dial error = %v, want %v", err, context.Canceled)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Dial did not return after Close")
+	}
+
+	if cli.Channel() != nil {
+		t.Fatal("expected retired dial to leave no active channel")
+	}
+	if got := atomic.LoadInt32(&trans.dialCalls); got != 0 {
+		t.Fatalf("transport Dial called %d times, want 0", got)
+	}
+}
+
+func TestClient_StaleSessionCloseCallbackDoesNotClearNewSession(t *testing.T) {
+	trans := &fakeTransport{}
+	firstConn := &fakeConn{}
+	secondConn := &fakeConn{}
+	var firstCtx context.Context
+	var secondCtx context.Context
+
+	trans.dial = func(network, addr string, driver transport.EventDriver) error {
+		var conn transport.Connection
+		if atomic.LoadInt32(&trans.dialCalls) == 1 {
+			conn = firstConn
+		} else {
+			conn = secondConn
+		}
+
+		connectCtx, err := driver.OnConnect(context.Background(), conn)
+		if err != nil {
+			return err
+		}
+		if atomic.LoadInt32(&trans.dialCalls) == 1 {
+			firstCtx = connectCtx
+		} else {
+			secondCtx = connectCtx
+		}
+		return nil
+	}
+
+	cli := NewClient(
+		"tcp",
+		"127.0.0.1:18888",
+		WithTransport(trans),
+		WithRouter(noopRouter()),
+	)
+	t.Cleanup(func() { cli.Close(nil) })
+
+	if err := cli.Dial(context.Background()); err != nil {
+		t.Fatalf("first Dial failed: %v", err)
+	}
+	firstDriver := trans.driver
+
+	trans.driver.OnConnClosed(firstCtx, firstConn, io.EOF)
+	waitFor(t, time.Second, func() bool {
+		return cli.Channel() == nil
+	})
+
+	if err := cli.Dial(context.Background()); err != nil {
+		t.Fatalf("second Dial failed: %v", err)
+	}
+
+	secondChannel := cli.Channel()
+	if secondChannel == nil {
+		t.Fatal("expected second dial to capture an active channel")
+	}
+
+	firstDriver.OnConnClosed(firstCtx, firstConn, io.EOF)
+
+	if got := cli.Channel(); got != secondChannel {
+		t.Fatal("expected stale old-session close callback to preserve the newer active channel")
+	}
+	if !secondConn.IsActive() {
+		t.Fatal("expected stale old-session close callback to leave the newer connection active")
+	}
+	if secondCtx == nil {
+		t.Fatal("expected second session context to be captured")
 	}
 }
 
