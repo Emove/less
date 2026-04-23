@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-var ErrReleased = errors.New("framebuf: buffer has been released")
-
 type chunkReader struct {
 	chunks [][]byte
 	index  int

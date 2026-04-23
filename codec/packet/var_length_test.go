@@ -90,6 +90,7 @@ func TestVariableLengthCodec_DecodeFragmentedHeaderAndBody(t *testing.T) {
 			{0},
 			{0},
 			{5},
+			{0},
 			{'h'},
 			{'e', 'l'},
 			{'l', 'o'},
