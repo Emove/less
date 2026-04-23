@@ -10,69 +10,228 @@ import (
 var ErrUnsupportedWriterBuffer = errors.New("unsupported writer buffer implementation")
 
 type writer struct {
-	segments [][]byte
+	alloc *allocator
+
+	head *node
+	tail *node
+
+	length int
+
+	frames   []codec.Frame
+	released bool
 }
 
 func NewWriter() codec.WriterBuffer {
-	return &writer{}
+	return &writer{alloc: defaultAllocator}
 }
 
 func (w *writer) Malloc(n int) ([]byte, error) {
-	buf := make([]byte, n)
-	w.segments = append(w.segments, buf)
-	return buf, nil
+	if w == nil {
+		return nil, ErrReleased
+	}
+	if w.released {
+		return nil, ErrReleased
+	}
+	if n <= 0 {
+		return nil, nil
+	}
+
+	nn := w.tail
+	if nn == nil || len(nn.writable()) < n {
+		nn = w.alloc.newNode(n)
+		nn.readEnd = 0
+		nn.writeEnd = 0
+		w.appendNode(nn)
+	}
+
+	start := nn.writeEnd
+	nn.writeEnd += n
+	if nn.readEnd < nn.writeEnd {
+		nn.readEnd = nn.writeEnd
+	}
+	w.length += n
+
+	return nn.block.buf[start:nn.writeEnd:nn.writeEnd], nil
 }
 
 func (w *writer) WriteBinary(p []byte) error {
-	cp := append([]byte(nil), p...)
-	w.segments = append(w.segments, cp)
+	if len(p) == 0 {
+		return nil
+	}
+
+	buf, err := w.Malloc(len(p))
+	if err != nil {
+		return err
+	}
+	copy(buf, p)
 	return nil
 }
 
 func (w *writer) WriteFrame(f codec.Frame) error {
-	return w.WriteBinary(f.Bytes())
+	if f == nil {
+		return nil
+	}
+	if w == nil {
+		return ErrReleased
+	}
+	if w.released {
+		return ErrReleased
+	}
+
+	f.Retain()
+	if err := w.WriteBinary(f.Bytes()); err != nil {
+		f.Release()
+		return err
+	}
+	w.frames = append(w.frames, f)
+	return nil
 }
 
 func (w *writer) Append(src codec.WriterBuffer) error {
+	if src == nil {
+		return nil
+	}
+	if w == nil {
+		return ErrReleased
+	}
+	if w.released {
+		return ErrReleased
+	}
+
 	other, ok := src.(*writer)
 	if !ok {
-		if src == nil {
-			return nil
-		}
 		return ErrUnsupportedWriterBuffer
 	}
-	for _, seg := range other.segments {
-		cp := append([]byte(nil), seg...)
-		w.segments = append(w.segments, cp)
+	if other == nil || other == w || other.released {
+		return nil
 	}
-	other.Release()
+
+	if other.head != nil {
+		if w.tail != nil {
+			w.tail.next = other.head
+		} else {
+			w.head = other.head
+		}
+		w.tail = other.tail
+		w.length += other.length
+	}
+	if len(other.frames) > 0 {
+		w.frames = append(w.frames, other.frames...)
+	}
+
+	other.head = nil
+	other.tail = nil
+	other.length = 0
+	other.frames = nil
+	other.released = true
 	return nil
 }
 
 func (w *writer) Len() int {
-	total := 0
-	for _, seg := range w.segments {
-		total += len(seg)
+	if w == nil || w.released {
+		return 0
 	}
-	return total
+	return w.length
 }
 
 func (w *writer) FlushTo(dst io.Writer) error {
-	for _, seg := range w.segments {
-		for len(seg) > 0 {
-			n, err := dst.Write(seg)
+	if w == nil || w.released || w.head == nil {
+		return nil
+	}
+
+	cur := w.head
+	for cur != nil {
+		if cur.block == nil || cur.readEnd <= cur.readStart {
+			next := cur.next
+			w.dropHead(cur, next)
+			cur = next
+			continue
+		}
+
+		data := cur.block.buf[cur.readStart:cur.readEnd]
+		for len(data) > 0 {
+			n, err := dst.Write(data)
+			if n > 0 {
+				cur.readStart += n
+				w.length -= n
+				data = data[n:]
+			}
 			if err != nil {
+				if cur.readStart >= cur.readEnd {
+					next := cur.next
+					w.dropHead(cur, next)
+					cur = next
+				}
 				return err
 			}
 			if n == 0 {
 				return io.ErrShortWrite
 			}
-			seg = seg[n:]
 		}
+
+		next := cur.next
+		w.dropHead(cur, next)
+		cur = next
 	}
+
+	w.head = nil
+	w.tail = nil
+	w.length = 0
 	return nil
 }
 
 func (w *writer) Release() {
-	w.segments = nil
+	if w == nil || w.released {
+		return
+	}
+	w.released = true
+
+	w.releaseNodes()
+	w.releaseFrames()
+
+	w.head = nil
+	w.tail = nil
+	w.length = 0
+}
+
+func (w *writer) appendNode(n *node) {
+	if n == nil {
+		return
+	}
+	if w.head == nil {
+		w.head = n
+		w.tail = n
+		return
+	}
+	w.tail.next = n
+	w.tail = n
+}
+
+func (w *writer) dropHead(cur, next *node) {
+	if cur != nil {
+		cur.next = nil
+		cur.release()
+	}
+	w.head = next
+	if next == nil {
+		w.tail = nil
+	}
+}
+
+func (w *writer) releaseNodes() {
+	for cur := w.head; cur != nil; {
+		next := cur.next
+		cur.next = nil
+		cur.release()
+		cur = next
+	}
+}
+
+func (w *writer) releaseFrames() {
+	for _, frame := range w.frames {
+		if frame != nil {
+			frame.Release()
+		}
+	}
+	w.frames = nil
 }
