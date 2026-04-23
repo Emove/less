@@ -87,6 +87,9 @@ func (a *allocator) getBlock(size int) *block {
 	if size <= 0 {
 		size = 1
 	}
+	if size < minBlockSize {
+		size = minBlockSize
+	}
 	if size > largeBlockThreshold {
 		return &block{buf: make([]byte, size), unmanaged: true}
 	}

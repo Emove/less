@@ -44,6 +44,9 @@ func (n *node) bytes() []byte {
 }
 
 func (n *node) retain() {
+	if n == nil {
+		return
+	}
 	for {
 		cur := n.refs.Load()
 		if cur <= 0 {
@@ -56,6 +59,9 @@ func (n *node) retain() {
 }
 
 func (n *node) release() {
+	if n == nil {
+		return
+	}
 	for {
 		cur := n.refs.Load()
 		if cur <= 0 {

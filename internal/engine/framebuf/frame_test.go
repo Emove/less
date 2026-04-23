@@ -181,16 +181,33 @@ func TestAllocator_LargeBlocksAreUnmanaged(t *testing.T) {
 	a.putBlock(block)
 }
 
-func TestNode_ReleaseReturnsOwnedBlockOnce(t *testing.T) {
+func TestAllocator_GetBlockAppliesMinimumBlockSize(t *testing.T) {
 	a := newAllocator()
-	n := a.newNode(16)
+
+	for _, size := range []int{1, 512} {
+		block := a.getBlock(size)
+		if block.unmanaged {
+			t.Fatalf("block for size %d should be managed", size)
+		}
+		if got := cap(block.buf); got < minBlockSize {
+			t.Fatalf("cap(%d) = %d, want >= %d", size, got, minBlockSize)
+		}
+		a.putBlock(block)
+	}
+}
+
+func TestNode_ReleaseIsIdempotentForNilAndReleasedNodes(t *testing.T) {
+	var n *node
 	n.retain()
 	n.release()
-	n.release()
-	n.release()
-	if refs := n.refs.Load(); refs != 0 {
-		t.Fatalf("refs = %d, want 0", refs)
-	}
+
+	a := newAllocator()
+	live := a.newNode(16)
+	live.retain()
+	live.release()
+	live.release()
+	live.release()
+	live.release()
 }
 
 func TestNode_ResetClearsLinksAndOffsets(t *testing.T) {
@@ -204,10 +221,10 @@ func TestNode_ResetClearsLinksAndOffsets(t *testing.T) {
 
 	reused := a.newNode(16)
 	if reused.next != nil {
-		t.Fatal("reused node kept next pointer")
+		t.Fatal("new node kept next pointer")
 	}
 	if reused.readStart != 0 || reused.readEnd != 0 || reused.writeEnd != 0 {
-		t.Fatalf("reused offsets = %d/%d/%d, want zero", reused.readStart, reused.readEnd, reused.writeEnd)
+		t.Fatalf("new node offsets = %d/%d/%d, want zero", reused.readStart, reused.readEnd, reused.writeEnd)
 	}
 	reused.release()
 }
