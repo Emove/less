@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"reflect"
 
 	"github.com/emove/less"
 	"github.com/emove/less/codec"
@@ -122,7 +123,7 @@ func WithRouter(router less.Router) SerOption {
 
 // WithPacketCodec sets the packet codec used by the server transport engine.
 func WithPacketCodec(c codec.PacketCodec) SerOption {
-	if c == nil {
+	if codecIsNil(c) {
 		panic("packet codec can not be nil")
 	}
 	return func(ops *serverOptions) {
@@ -132,7 +133,7 @@ func WithPacketCodec(c codec.PacketCodec) SerOption {
 
 // WithPayloadCodec sets the payload codec used by the server transport engine.
 func WithPayloadCodec(c codec.PayloadCodec) SerOption {
-	if c == nil {
+	if codecIsNil(c) {
 		panic("payload codec can not be nil")
 	}
 	return func(ops *serverOptions) {
@@ -199,4 +200,17 @@ func parseAddr(srv *Server) string {
 	}
 
 	return fmt.Sprintf("%s:%s", addr, port)
+}
+
+func codecIsNil(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return rv.IsNil()
+	default:
+		return false
+	}
 }

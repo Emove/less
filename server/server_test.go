@@ -50,6 +50,7 @@ func TestServer_Run(t *testing.T) {
 func TestServer_CodecOptionsAreAccepted(t *testing.T) {
 	transport := newBlockingTransport()
 	var captured less.Channel
+	var inboundMessage string
 	packetCodec := stubServerPacketCodec{}
 	payloadCodec := stubServerPayloadCodec{}
 
@@ -63,7 +64,8 @@ func TestServer_CodecOptionsAreAccepted(t *testing.T) {
 			return ctx, nil
 		}),
 		WithRouter(func(ctx context.Context, ch less.Channel, msg interface{}) (less.Handler, error) {
-			return func(context.Context, less.Channel, interface{}) error {
+			return func(_ context.Context, _ less.Channel, message interface{}) error {
+				inboundMessage = message.(string)
 				return nil
 			}, nil
 		}),
@@ -78,7 +80,8 @@ func TestServer_CodecOptionsAreAccepted(t *testing.T) {
 	}
 
 	conn := &captureConn{}
-	if _, err := transport.driver.OnConnect(context.Background(), conn); err != nil {
+	ctx, err := transport.driver.OnConnect(context.Background(), conn)
+	if err != nil {
 		t.Fatalf("OnConnect failed: %v", err)
 	}
 	if captured == nil {
@@ -89,8 +92,20 @@ func TestServer_CodecOptionsAreAccepted(t *testing.T) {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	if got := conn.String(); got != "pkt<msg:hello>" {
-		t.Fatalf("connection bytes = %q, want %q", got, "pkt<msg:hello>")
+	wantOutbound := append(make([]byte, 4), []byte("msg:hello")...)
+	binary.BigEndian.PutUint32(wantOutbound[:4], uint32(len("msg:hello")))
+	if got := conn.Bytes(); !bytes.Equal(got, wantOutbound) {
+		t.Fatalf("connection bytes = %v, want %v", got, wantOutbound)
+	}
+
+	wantInbound := append(make([]byte, 4), []byte("msg:world")...)
+	binary.BigEndian.PutUint32(wantInbound[:4], uint32(len("msg:world")))
+	conn.readData = wantInbound
+	if err := transport.driver.OnMessage(ctx, conn); err != nil {
+		t.Fatalf("OnMessage failed: %v", err)
+	}
+	if got := inboundMessage; got != "world" {
+		t.Fatalf("inbound message = %q, want %q", got, "world")
 	}
 
 	srv.Shutdown(context.Background(), nil)
@@ -100,16 +115,19 @@ type stubServerPacketCodec struct{}
 
 func (stubServerPacketCodec) Name() string { return "stub-server-packet" }
 func (stubServerPacketCodec) Encode(dst codec.WriterBuffer, payload codec.Frame) error {
-	if err := dst.WriteBinary([]byte("pkt<")); err != nil {
+	header, err := dst.Malloc(4)
+	if err != nil {
 		return err
 	}
-	if err := dst.WriteFrame(payload); err != nil {
-		return err
-	}
-	return dst.WriteBinary([]byte(">"))
+	binary.BigEndian.PutUint32(header, uint32(len(payload.Bytes())))
+	return dst.WriteFrame(payload)
 }
 func (stubServerPacketCodec) Decode(src codec.ReaderBuffer) (codec.Frame, error) {
-	return nil, errors.New("Decode not expected in this test")
+	header, err := src.Next(4)
+	if err != nil {
+		return nil, err
+	}
+	return src.Slice(int(binary.BigEndian.Uint32(header)))
 }
 
 type stubServerPayloadCodec struct{}
@@ -119,15 +137,27 @@ func (stubServerPayloadCodec) Marshal(message any) (codec.Frame, error) {
 	return framebuf.NewFrame([]byte("msg:" + message.(string))), nil
 }
 func (stubServerPayloadCodec) Unmarshal(payload codec.Frame) (any, error) {
-	return string(payload.Bytes()), nil
+	body := payload.Bytes()
+	if !bytes.HasPrefix(body, []byte("msg:")) {
+		return nil, errors.New("invalid payload")
+	}
+	return string(body[len("msg:"):]), nil
 }
 
 type captureConn struct {
 	bytes.Buffer
-	closed int32
+	readData []byte
+	closed   int32
 }
 
-func (c *captureConn) Read(buf []byte) (int, error)  { return 0, stdio.EOF }
+func (c *captureConn) Read(buf []byte) (int, error) {
+	if len(c.readData) == 0 {
+		return 0, stdio.EOF
+	}
+	n := copy(buf, c.readData)
+	c.readData = c.readData[n:]
+	return n, nil
+}
 func (c *captureConn) Write(buf []byte) (int, error) { return c.Buffer.Write(buf) }
 func (c *captureConn) IsActive() bool                { return atomic.LoadInt32(&c.closed) == 0 }
 func (c *captureConn) Close() error {
@@ -136,6 +166,48 @@ func (c *captureConn) Close() error {
 }
 func (c *captureConn) LocalAddr() net.Addr  { return shutdownAddr{} }
 func (c *captureConn) RemoteAddr() net.Addr { return shutdownAddr{} }
+
+func TestServer_CodecOptionsRejectTypedNil(t *testing.T) {
+	t.Run("packet", func(t *testing.T) {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("expected WithPacketCodec to panic on typed nil")
+			}
+		}()
+		var c *typedNilPacketCodec
+		_ = WithPacketCodec(c)
+	})
+
+	t.Run("payload", func(t *testing.T) {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("expected WithPayloadCodec to panic on typed nil")
+			}
+		}()
+		var c *typedNilPayloadCodec
+		_ = WithPayloadCodec(c)
+	})
+}
+
+type typedNilPacketCodec struct{}
+
+func (*typedNilPacketCodec) Name() string { return "typed-nil-packet" }
+func (*typedNilPacketCodec) Encode(codec.WriterBuffer, codec.Frame) error {
+	return nil
+}
+func (*typedNilPacketCodec) Decode(codec.ReaderBuffer) (codec.Frame, error) {
+	return nil, nil
+}
+
+type typedNilPayloadCodec struct{}
+
+func (*typedNilPayloadCodec) Name() string { return "typed-nil-payload" }
+func (*typedNilPayloadCodec) Marshal(any) (codec.Frame, error) {
+	return nil, nil
+}
+func (*typedNilPayloadCodec) Unmarshal(codec.Frame) (any, error) {
+	return nil, nil
+}
 
 func mockClient(t *testing.T) {
 	con, err := net.Dial("tcp", "localhost:8888")
