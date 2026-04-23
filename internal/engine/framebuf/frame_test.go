@@ -171,3 +171,43 @@ func TestWriter_AppendRejectsUnsupportedWriterBuffer(t *testing.T) {
 		t.Fatalf("Append() error = %v, want %v", err, ErrUnsupportedWriterBuffer)
 	}
 }
+
+func TestAllocator_LargeBlocksAreUnmanaged(t *testing.T) {
+	a := newAllocator()
+	block := a.getBlock(largeBlockThreshold + 1)
+	if !block.unmanaged {
+		t.Fatal("large block should be unmanaged")
+	}
+	a.putBlock(block)
+}
+
+func TestNode_ReleaseReturnsOwnedBlockOnce(t *testing.T) {
+	a := newAllocator()
+	n := a.newNode(16)
+	n.retain()
+	n.release()
+	n.release()
+	n.release()
+	if refs := n.refs.Load(); refs != 0 {
+		t.Fatalf("refs = %d, want 0", refs)
+	}
+}
+
+func TestNode_ResetClearsLinksAndOffsets(t *testing.T) {
+	a := newAllocator()
+	n := a.newNode(16)
+	n.next = a.newNode(16)
+	n.readStart = 2
+	n.readEnd = 4
+	n.writeEnd = 8
+	n.release()
+
+	reused := a.newNode(16)
+	if reused.next != nil {
+		t.Fatal("reused node kept next pointer")
+	}
+	if reused.readStart != 0 || reused.readEnd != 0 || reused.writeEnd != 0 {
+		t.Fatalf("reused offsets = %d/%d/%d, want zero", reused.readStart, reused.readEnd, reused.writeEnd)
+	}
+	reused.release()
+}
