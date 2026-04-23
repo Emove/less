@@ -5,10 +5,93 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/emove/less/codec"
 )
+
+func TestFrame_SingleSpanSurvivesNodeRelease(t *testing.T) {
+	a := newAllocator()
+	n := a.newNode(16)
+	copy(n.block.buf, []byte("hello"))
+	n.readEnd = 5
+	n.writeEnd = 5
+
+	registerFrameChunks(a, n.readable())
+	frame := newFrameFromSpans(a, []span{{start: 0, end: 5}})
+	defer frame.Release()
+
+	n.release()
+
+	if got := string(frame.Bytes()); got != "hello" {
+		t.Fatalf("Bytes() = %q, want %q", got, "hello")
+	}
+}
+
+func TestFrame_MultiSpanLazyFlattensAndReleaseIsIdempotent(t *testing.T) {
+	a := newAllocator()
+	left := a.newNode(16)
+	right := a.newNode(16)
+	copy(left.block.buf, []byte("hel"))
+	copy(right.block.buf, []byte("lo"))
+	left.readEnd = 3
+	left.writeEnd = 3
+	right.readEnd = 2
+	right.writeEnd = 2
+
+	registerFrameChunks(a, left.readable(), right.readable())
+	frame := newFrameFromSpans(a, []span{
+		{start: 0, end: 3},
+		{start: 0, end: 2},
+	})
+
+	left.release()
+	right.release()
+
+	first := frame.Bytes()
+	if got := string(first); got != "hello" {
+		t.Fatalf("Bytes() = %q, want %q", got, "hello")
+	}
+
+	second := frame.Bytes()
+	if got := string(second); got != "hello" {
+		t.Fatalf("Bytes() on second call = %q, want %q", got, "hello")
+	}
+	if len(first) > 0 && len(second) > 0 && &first[0] != &second[0] {
+		t.Fatal("Bytes() should reuse the flattened buffer")
+	}
+
+	frame.Release()
+	frame.Release()
+
+	if got := frame.Bytes(); got != nil {
+		t.Fatalf("Bytes() after Release = %v, want nil", got)
+	}
+}
+
+func TestFrame_RetainReleaseIsRaceSafeByContract(t *testing.T) {
+	frame := NewFrame([]byte("hello"))
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	worker := func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			frame.Retain()
+			frame.Release()
+		}
+	}
+
+	go worker()
+	go worker()
+	wg.Wait()
+
+	frame.Release()
+	if got := frame.Bytes(); got != nil {
+		t.Fatalf("Bytes() after final Release = %v, want nil", got)
+	}
+}
 
 func TestFrame_RetainReleaseKeepsBytesStable(t *testing.T) {
 	frame := NewFrame([]byte("hello"))
