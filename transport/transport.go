@@ -21,12 +21,8 @@ type EventDriver interface {
 type Transport interface {
 	// Listen listens on the given address and uses the driver for connection events.
 	Listen(addr string, driver EventDriver) error
+	// Dial dials the remote endpoint and uses the driver for connection events.
+	Dial(network, addr string, driver EventDriver) error
 	// Close closes the Transport.
 	Close()
-}
-
-// Dialer defines a Dialer.
-type Dialer interface {
-	// Dial dials the remote endpoint.
-	Dial(net, addr string) error
 }

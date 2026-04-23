@@ -17,6 +17,10 @@ type connPair struct {
 	server net.Conn
 }
 
+func TestTransport_ImplementsUnifiedTransport(t *testing.T) {
+	var _ trans.Transport = New()
+}
+
 func prepare() (pair *connPair, err error) {
 	network, addr := "tcp", "127.0.0.1:0"
 	listen, err := net.Listen(network, addr)
