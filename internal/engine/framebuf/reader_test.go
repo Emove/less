@@ -34,7 +34,10 @@ func (r *chunkReader) Read(p []byte) (int, error) {
 }
 
 func newTestReaderWithBlockSize(src io.Reader, blockSize int) *reader {
-	return newReader(src, defaultAllocator, blockSize)
+	if blockSize <= 0 {
+		blockSize = 256
+	}
+	return &reader{src: src, buf: make([]byte, 0, blockSize)}
 }
 
 func TestReader_NextDoesNotCompactReturnedBorrowedSlice(t *testing.T) {

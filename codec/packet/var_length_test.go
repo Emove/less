@@ -25,35 +25,39 @@ func TestVariableLengthCodec_DecodeReturnsFrame(t *testing.T) {
 }
 
 func TestVariableLengthCodec_Encode(t *testing.T) {
-	type args struct {
-		payload []byte
-	}
 	buff := &bytes.Buffer{}
 	tests := []struct {
-		args    args
+		name    string
+		payload []byte
 		want    string
 		wantErr bool
 	}{
 		{
-			args:    args{payload: []byte("hello world")},
+			name:    "hello-world",
+			payload: []byte("hello world"),
 			want:    "hello world",
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			va := &variableLengthCodec{}
 			writer := framebuf.NewWriter()
-			if err := va.Encode(writer, framebuf.NewFrame(tt.args.payload)); (err != nil) != tt.wantErr {
-				t.Errorf("Encode() error = %v, wantErr %v", err, tt.wantErr)
-			} else if err == nil {
-				if flushErr := writer.FlushTo(buff); flushErr != nil {
-					t.Fatalf("FlushTo() error = %v", flushErr)
-				}
+			if err := va.Encode(writer, framebuf.NewFrame(tt.payload)); err != nil {
+				t.Fatalf("Encode() error = %v", err)
 			}
+			if flushErr := writer.FlushTo(buff); flushErr != nil {
+				t.Fatalf("FlushTo() error = %v", flushErr)
+			}
+
+			gotHeader := binary.BigEndian.Uint32(buff.Bytes()[:4])
+			if gotHeader != uint32(len(tt.payload)) {
+				t.Fatalf("header length = %d, want %d", gotHeader, len(tt.payload))
+			}
+
 			got := buff.Bytes()[binary.MaxVarintLen32:]
 			if string(got) != tt.want {
-				t.Errorf("Encode() want = %v, got = %v", tt.want, string(got))
+				t.Errorf("Encode() want = %q, got = %q", tt.want, string(got))
 			}
 			buff.Reset()
 		})

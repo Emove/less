@@ -61,21 +61,20 @@ func Test_delimiterCodec_Encode(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		for _, msg := range tt.msg {
-			t.Run(tt.name, func(t *testing.T) {
+		for i, msg := range tt.msg {
+			t.Run(tt.name+"/"+string(rune('1'+i)), func(t *testing.T) {
 				writer := framebuf.NewWriter()
-				if err := tt.codec.Encode(writer, framebuf.NewFrame([]byte(msg))); (err != nil) != tt.wantErr {
-					t.Errorf("Encode() error = %v, wantErr %v", err, tt.wantErr)
-				} else if err == nil {
-					if flushErr := writer.FlushTo(buff); flushErr != nil {
-						t.Fatalf("FlushTo() error = %v", flushErr)
-					}
+				if err := tt.codec.Encode(writer, framebuf.NewFrame([]byte(msg))); err != nil {
+					t.Fatalf("Encode() error = %v", err)
+				}
+				if flushErr := writer.FlushTo(buff); flushErr != nil {
+					t.Fatalf("FlushTo() error = %v", flushErr)
 				}
 			})
 		}
 
 		if buff.String() != string(tt.want) {
-			t.Errorf("Encode() error want: %s, got: %s", buff.String(), string(tt.want))
+			t.Errorf("Encode() output want %q, got %q", string(tt.want), buff.String())
 		}
 		buff.Reset()
 	}
