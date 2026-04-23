@@ -97,6 +97,94 @@ func TestClient_DialReturnsOnChannelError(t *testing.T) {
 	}
 }
 
+func TestClient_DialRejectsRedialWhileSessionActive(t *testing.T) {
+	trans := &fakeTransport{}
+	conn := &fakeConn{}
+
+	trans.dial = func(network, addr string, driver transport.EventDriver) error {
+		_, err := driver.OnConnect(context.Background(), conn)
+		return err
+	}
+
+	cli := NewClient(
+		"tcp",
+		"127.0.0.1:18888",
+		WithTransport(trans),
+		WithRouter(noopRouter()),
+	)
+	t.Cleanup(func() { cli.Close(nil) })
+
+	if err := cli.Dial(context.Background()); err != nil {
+		t.Fatalf("first Dial failed: %v", err)
+	}
+
+	firstChannel := cli.Channel()
+	if firstChannel == nil {
+		t.Fatal("expected first dial to capture an active channel")
+	}
+
+	err := cli.Dial(context.Background())
+	if err == nil {
+		t.Fatal("expected redial to be rejected while session is active")
+	}
+	if got := cli.Channel(); got != firstChannel {
+		t.Fatal("expected redial rejection to preserve the active channel")
+	}
+	if got := atomic.LoadInt32(&trans.dialCalls); got != 1 {
+		t.Fatalf("transport Dial called %d times, want 1", got)
+	}
+}
+
+func TestClient_DialContextCancellationClosesCurrentSession(t *testing.T) {
+	trans := &fakeTransport{}
+	conn := &fakeConn{}
+	done := make(chan error, 1)
+
+	trans.dial = func(network, addr string, driver transport.EventDriver) error {
+		_, err := driver.OnConnect(context.Background(), conn)
+		return err
+	}
+
+	cli := NewClient(
+		"tcp",
+		"127.0.0.1:18888",
+		WithTransport(trans),
+		WithRouter(noopRouter()),
+		WithOnChannelClosed(func(_ context.Context, _ less.Channel, err error) {
+			select {
+			case done <- err:
+			default:
+			}
+		}),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	t.Cleanup(func() { cli.Close(nil) })
+
+	if err := cli.Dial(ctx); err != nil {
+		t.Fatalf("Dial failed: %v", err)
+	}
+	if cli.Channel() == nil {
+		t.Fatal("expected active channel after successful dial")
+	}
+
+	cancel()
+
+	waitFor(t, time.Second, func() bool {
+		return cli.Channel() == nil && !conn.IsActive()
+	})
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("OnChannelClosed error = %v, want %v", err, context.Canceled)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected OnChannelClosed to observe context cancellation")
+	}
+}
+
 func TestClient_CodecOptionsRejectTypedNil(t *testing.T) {
 	t.Run("packet", func(t *testing.T) {
 		defer func() {
@@ -116,6 +204,27 @@ func TestClient_CodecOptionsRejectTypedNil(t *testing.T) {
 		}()
 		var c *typedNilPayloadCodec
 		_ = WithPayloadCodec(c)
+	})
+}
+
+func TestClient_WithTransportRejectsNil(t *testing.T) {
+	t.Run("nil", func(t *testing.T) {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("expected WithTransport to panic on nil")
+			}
+		}()
+		_ = WithTransport(nil)
+	})
+
+	t.Run("typed nil", func(t *testing.T) {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("expected WithTransport to panic on typed nil")
+			}
+		}()
+		var tr *typedNilTransport
+		_ = WithTransport(tr)
 	})
 }
 
@@ -228,6 +337,7 @@ func dialClientEventually(t *testing.T, cli *Client, ctx context.Context) error 
 type fakeTransport struct {
 	driver     transport.EventDriver
 	dial       func(network, addr string, driver transport.EventDriver) error
+	dialCalls  int32
 	closeCount int32
 }
 
@@ -236,6 +346,7 @@ func (t *fakeTransport) Listen(string, transport.EventDriver) error {
 }
 
 func (t *fakeTransport) Dial(network, addr string, driver transport.EventDriver) error {
+	atomic.AddInt32(&t.dialCalls, 1)
 	t.driver = driver
 	if t.dial != nil {
 		return t.dial(network, addr, driver)
@@ -284,4 +395,28 @@ func (*typedNilPayloadCodec) Marshal(any) (codec.Frame, error) {
 }
 func (*typedNilPayloadCodec) Unmarshal(codec.Frame) (any, error) {
 	return nil, nil
+}
+
+type typedNilTransport struct{}
+
+func (*typedNilTransport) Listen(string, transport.EventDriver) error { return nil }
+func (*typedNilTransport) Dial(string, string, transport.EventDriver) error {
+	return nil
+}
+func (*typedNilTransport) Close() {}
+
+func waitFor(t *testing.T, timeout time.Duration, predicate func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if predicate() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if !predicate() {
+		t.Fatal("condition not met before timeout")
+	}
 }

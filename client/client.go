@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"sync"
 
@@ -21,6 +22,7 @@ type Client struct {
 	ops        *clientOptions
 	handler    engine.TransHandler
 	channel    less.Channel
+	sessionID  uint64
 
 	mu sync.RWMutex
 }
@@ -57,47 +59,54 @@ func defaultClientOptions() *clientOptions {
 	}
 }
 
+var errClientSessionActive = errors.New("client already has an active session")
+
 // Dial creates the endpoint handler and dials the remote transport synchronously.
 func (cli *Client) Dial(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	cli.mu.Lock()
-	if cli.cancelFunc != nil {
-		cli.cancelFunc()
+	if cli.handler != nil || channelIsActive(cli.channel) {
+		cli.mu.Unlock()
+		return errClientSessionActive
 	}
+	sessionID := cli.sessionID + 1
+	cli.sessionID = sessionID
 	cli.ctx, cli.cancelFunc = context.WithCancel(ctx)
 	cli.channel = nil
+	cli.handler = nil
 	cli.mu.Unlock()
 
 	options := make([]engine.Option, 0, len(cli.ops.transOptions)+2)
 	options = append(options,
-		engine.AddOnChannel(cli.captureChannel),
-		engine.AddOnChannelClosed(cli.clearClosedChannel),
+		engine.AddOnChannel(cli.captureChannel(sessionID)),
+		engine.AddOnChannelClosed(cli.clearClosedChannel(sessionID)),
 	)
 	options = append(options, cli.ops.transOptions...)
 
-	handler := engine.NewEndpointHandler(cli.ctx, options...)
+	cli.mu.RLock()
+	dialCtx := cli.ctx
+	cli.mu.RUnlock()
+
+	handler := engine.NewEndpointHandler(dialCtx, options...)
 
 	cli.mu.Lock()
-	cli.handler = handler
+	if cli.sessionID == sessionID {
+		cli.handler = handler
+	}
 	cli.mu.Unlock()
 
 	if err := cli.ops.transport.Dial(cli.network, cli.addr, handler); err != nil {
-		_ = handler.Close()
-		cli.mu.Lock()
-		cli.channel = nil
-		cli.handler = nil
-		cancelFunc := cli.cancelFunc
-		cli.cancelFunc = nil
-		cli.ctx = nil
-		cli.mu.Unlock()
-		if cancelFunc != nil {
-			cancelFunc()
-		}
+		cli.closeSessionIfCurrent(sessionID, err, false)
 		return err
 	}
+
+	go cli.closeWhenDialContextDone(sessionID, ctx, dialCtx)
 
 	return nil
 }
@@ -111,13 +120,33 @@ func (cli *Client) Channel() less.Channel {
 
 // Close closes the handler, transport, context, and active channel if present.
 func (cli *Client) Close(err error) {
+	cli.closeSession(err, true)
+}
+
+func (cli *Client) closeWhenDialContextDone(sessionID uint64, parentCtx, dialCtx context.Context) {
+	if dialCtx == nil || dialCtx.Done() == nil {
+		return
+	}
+	<-dialCtx.Done()
+	if err := parentCtx.Err(); err != nil {
+		cli.closeSessionIfCurrent(sessionID, err, false)
+	}
+}
+
+func (cli *Client) closeSessionIfCurrent(sessionID uint64, err error, closeTransport bool) bool {
 	cli.mu.Lock()
+	if cli.sessionID != sessionID {
+		cli.mu.Unlock()
+		return false
+	}
 	handler := cli.handler
 	cli.handler = nil
 	ch := cli.channel
+	cli.channel = nil
 	cancelFunc := cli.cancelFunc
 	cli.cancelFunc = nil
 	cli.ctx = nil
+	cli.sessionID = 0
 	cli.mu.Unlock()
 
 	if ch != nil {
@@ -126,29 +155,67 @@ func (cli *Client) Close(err error) {
 	if handler != nil {
 		_ = handler.Close()
 	}
-	cli.ops.transport.Close()
+	if closeTransport {
+		cli.ops.transport.Close()
+	}
+	if cancelFunc != nil {
+		cancelFunc()
+	}
+	return true
+}
+
+func (cli *Client) closeSession(err error, closeTransport bool) {
+	cli.mu.Lock()
+	handler := cli.handler
+	cli.handler = nil
+	ch := cli.channel
+	cli.channel = nil
+	cancelFunc := cli.cancelFunc
+	cli.cancelFunc = nil
+	cli.ctx = nil
+	cli.sessionID = 0
+	cli.mu.Unlock()
+
+	if ch != nil {
+		ch.Close(err)
+	}
+	if handler != nil {
+		_ = handler.Close()
+	}
+	if closeTransport {
+		cli.ops.transport.Close()
+	}
 	if cancelFunc != nil {
 		cancelFunc()
 	}
 }
 
-func (cli *Client) captureChannel(ctx context.Context, ch less.Channel) (context.Context, error) {
-	cli.mu.Lock()
-	cli.channel = ch
-	cli.mu.Unlock()
-	return ctx, nil
+func (cli *Client) captureChannel(sessionID uint64) less.OnChannel {
+	return func(ctx context.Context, ch less.Channel) (context.Context, error) {
+		cli.mu.Lock()
+		if cli.sessionID == sessionID {
+			cli.channel = ch
+		}
+		cli.mu.Unlock()
+		return ctx, nil
+	}
 }
 
-func (cli *Client) clearClosedChannel(_ context.Context, ch less.Channel, _ error) {
-	cli.mu.Lock()
-	defer cli.mu.Unlock()
-	if cli.channel == ch {
-		cli.channel = nil
+func (cli *Client) clearClosedChannel(sessionID uint64) less.OnChannelClosed {
+	return func(_ context.Context, ch less.Channel, _ error) {
+		cli.mu.Lock()
+		defer cli.mu.Unlock()
+		if cli.sessionID == sessionID && cli.channel == ch {
+			cli.channel = nil
+		}
 	}
 }
 
 // WithTransport sets the transport used by the client.
 func WithTransport(transport transport.Transport) CliOption {
+	if valueIsNil(transport) {
+		panic("transport can not be nil")
+	}
 	return func(ops *clientOptions) {
 		ops.transport = transport
 	}
@@ -199,7 +266,7 @@ func WithRouter(router less.Router) CliOption {
 
 // WithPacketCodec sets the packet codec used by the client endpoint.
 func WithPacketCodec(c codec.PacketCodec) CliOption {
-	if codecIsNil(c) {
+	if valueIsNil(c) {
 		panic("packet codec can not be nil")
 	}
 	return func(ops *clientOptions) {
@@ -209,7 +276,7 @@ func WithPacketCodec(c codec.PacketCodec) CliOption {
 
 // WithPayloadCodec sets the payload codec used by the client endpoint.
 func WithPayloadCodec(c codec.PayloadCodec) CliOption {
-	if codecIsNil(c) {
+	if valueIsNil(c) {
 		panic("payload codec can not be nil")
 	}
 	return func(ops *clientOptions) {
@@ -231,7 +298,7 @@ func MaxReceiveMessageSize(size uint32) CliOption {
 	}
 }
 
-func codecIsNil(v any) bool {
+func valueIsNil(v any) bool {
 	if v == nil {
 		return true
 	}
@@ -242,4 +309,8 @@ func codecIsNil(v any) bool {
 	default:
 		return false
 	}
+}
+
+func channelIsActive(ch less.Channel) bool {
+	return ch != nil && ch.IsActive()
 }
