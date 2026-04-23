@@ -3,6 +3,7 @@ package framebuf
 import "sync/atomic"
 
 type span struct {
+	node  *node
 	start int
 	end   int
 }

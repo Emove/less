@@ -18,11 +18,16 @@ func TestFrame_SingleSpanSurvivesNodeRelease(t *testing.T) {
 	n.readEnd = 5
 	n.writeEnd = 5
 
-	registerFrameChunks(a, n.readable())
-	frame := newFrameFromSpans(a, []span{{start: 0, end: 5}})
+	frame := newFrameFromSpans(a, []span{{node: n, start: 0, end: 5}})
+	if got := n.refs.Load(); got != 2 {
+		t.Fatalf("node refs after frame creation = %d, want 2", got)
+	}
 	defer frame.Release()
 
 	n.release()
+	if got := n.refs.Load(); got != 1 {
+		t.Fatalf("node refs after release = %d, want 1", got)
+	}
 
 	if got := string(frame.Bytes()); got != "hello" {
 		t.Fatalf("Bytes() = %q, want %q", got, "hello")
@@ -40,14 +45,25 @@ func TestFrame_MultiSpanLazyFlattensAndReleaseIsIdempotent(t *testing.T) {
 	right.readEnd = 2
 	right.writeEnd = 2
 
-	registerFrameChunks(a, left.readable(), right.readable())
 	frame := newFrameFromSpans(a, []span{
-		{start: 0, end: 3},
-		{start: 0, end: 2},
+		{node: left, start: 0, end: 3},
+		{node: right, start: 0, end: 2},
 	})
+	if got := left.refs.Load(); got != 2 {
+		t.Fatalf("left refs after frame creation = %d, want 2", got)
+	}
+	if got := right.refs.Load(); got != 2 {
+		t.Fatalf("right refs after frame creation = %d, want 2", got)
+	}
 
 	left.release()
 	right.release()
+	if got := left.refs.Load(); got != 1 {
+		t.Fatalf("left refs after release = %d, want 1", got)
+	}
+	if got := right.refs.Load(); got != 1 {
+		t.Fatalf("right refs after release = %d, want 1", got)
+	}
 
 	first := frame.Bytes()
 	if got := string(first); got != "hello" {
