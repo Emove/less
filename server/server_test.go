@@ -14,6 +14,7 @@ import (
 
 	"github.com/emove/less"
 	"github.com/emove/less/codec"
+	engine "github.com/emove/less/internal/engine"
 	"github.com/emove/less/internal/engine/framebuf"
 
 	"github.com/emove/less/log"
@@ -106,6 +107,62 @@ func TestServer_CodecOptionsAreAccepted(t *testing.T) {
 	}
 	if got := inboundMessage; got != "world" {
 		t.Fatalf("inbound message = %q, want %q", got, "world")
+	}
+
+	srv.Shutdown(context.Background(), nil)
+}
+
+func TestServer_Run_UsesGenericEndpointHandler(t *testing.T) {
+	blocking := newBlockingTransport()
+	received := make(chan string, 1)
+	srv := NewServer(
+		"127.0.0.1:18888",
+		WithTransport(blocking),
+		WithPacketCodec(stubServerPacketCodec{}),
+		WithPayloadCodec(stubServerPayloadCodec{}),
+		WithRouter(func(ctx context.Context, ch less.Channel, msg interface{}) (less.Handler, error) {
+			return func(_ context.Context, _ less.Channel, message interface{}) error {
+				select {
+				case received <- message.(string):
+				default:
+				}
+				return nil
+			}, nil
+		}),
+	)
+
+	srv.Run()
+
+	select {
+	case <-blocking.started:
+	case <-time.After(time.Second):
+		t.Fatal("server did not start transport listener")
+	}
+
+	handler, ok := blocking.driver.(engine.TransHandler)
+	if !ok {
+		t.Fatalf("transport driver type = %T, want engine.TransHandler", blocking.driver)
+	}
+
+	inbound := append(make([]byte, 4), []byte("msg:through-run")...)
+	binary.BigEndian.PutUint32(inbound[:4], uint32(len("msg:through-run")))
+	conn := &captureConn{readData: inbound}
+
+	ctx, err := handler.OnConnect(context.Background(), conn)
+	if err != nil {
+		t.Fatalf("OnConnect failed: %v", err)
+	}
+	if err := handler.OnMessage(ctx, conn); err != nil {
+		t.Fatalf("OnMessage failed: %v", err)
+	}
+
+	select {
+	case got := <-received:
+		if got != "through-run" {
+			t.Fatalf("router received %q, want %q", got, "through-run")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected router to receive the decoded message through Server.Run")
 	}
 
 	srv.Shutdown(context.Background(), nil)

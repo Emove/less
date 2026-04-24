@@ -2,9 +2,11 @@ package client
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/emove/less"
 	"github.com/emove/less/codec"
 	engine "github.com/emove/less/internal/engine"
+	"github.com/emove/less/internal/engine/framebuf"
 	"github.com/emove/less/server"
 	"github.com/emove/less/transport"
 )
@@ -652,6 +655,132 @@ func TestClient_CloseIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestClient_MessageFlow_UsesMiddlewareRouterAndCodec(t *testing.T) {
+	addr := reserveTCPAddr(t)
+	serverPacketCodec := messageFlowPacketCodec{}
+
+	var mu sync.Mutex
+	var inboundOrder []string
+	var outboundOrder []string
+	recordInbound := func(step string) {
+		mu.Lock()
+		inboundOrder = append(inboundOrder, step)
+		mu.Unlock()
+	}
+	recordOutbound := func(step string) {
+		mu.Lock()
+		outboundOrder = append(outboundOrder, step)
+		mu.Unlock()
+	}
+	snapshot := func(values []string) []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), values...)
+	}
+
+	serverChannelReady := make(chan less.Channel, 1)
+	serverReceived := make(chan string, 1)
+	clientReceived := make(chan string, 1)
+
+	srv := server.NewServer(
+		addr,
+		server.WithPacketCodec(serverPacketCodec),
+		server.WithPayloadCodec(messageFlowPayloadCodec{}),
+		server.WithOnChannel(func(ctx context.Context, ch less.Channel) (context.Context, error) {
+			select {
+			case serverChannelReady <- ch:
+			default:
+			}
+			return ctx, nil
+		}),
+		server.WithRouter(func(ctx context.Context, ch less.Channel, msg interface{}) (less.Handler, error) {
+			return func(_ context.Context, _ less.Channel, message interface{}) error {
+				select {
+				case serverReceived <- message.(string):
+				default:
+				}
+				return nil
+			}, nil
+		}),
+	)
+	srv.Run()
+	t.Cleanup(func() { srv.Shutdown(context.Background(), nil) })
+
+	cli := NewClient(
+		"tcp",
+		addr,
+		WithPacketCodec(messageFlowPacketCodec{
+			onEncode: func() {
+				recordOutbound("writeHandler")
+			},
+		}),
+		WithPayloadCodec(messageFlowPayloadCodec{}),
+		WithInboundMiddleware(messageFlowMiddleware("globalInbound", recordInbound)),
+		WithOutboundMiddleware(messageFlowMiddleware("globalOutbound", recordOutbound)),
+		WithOnChannel(func(ctx context.Context, ch less.Channel) (context.Context, error) {
+			ch.AddInboundMiddleware(messageFlowMiddleware("chInbound", recordInbound))
+			ch.AddOutboundMiddleware(messageFlowMiddleware("chOutbound", recordOutbound))
+			return ctx, nil
+		}),
+		WithRouter(func(ctx context.Context, ch less.Channel, msg interface{}) (less.Handler, error) {
+			return func(_ context.Context, _ less.Channel, message interface{}) error {
+				recordInbound("router")
+				select {
+				case clientReceived <- message.(string):
+				default:
+				}
+				return nil
+			}, nil
+		}),
+	)
+	t.Cleanup(func() { cli.Close(nil) })
+
+	if err := dialClientEventually(t, cli, context.Background()); err != nil {
+		t.Fatalf("Dial failed: %v", err)
+	}
+
+	var serverChannel less.Channel
+	select {
+	case serverChannel = <-serverChannelReady:
+	case <-time.After(time.Second):
+		t.Fatal("expected server OnChannel hook to capture the channel")
+	}
+
+	if err := cli.Channel().Write("from-client"); err != nil {
+		t.Fatalf("client Write failed: %v", err)
+	}
+
+	select {
+	case got := <-serverReceived:
+		if got != "from-client" {
+			t.Fatalf("server received %q, want %q", got, "from-client")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected server router to receive the client message")
+	}
+
+	if got := snapshot(outboundOrder); !equalStrings(got, []string{"chOutbound", "globalOutbound", "writeHandler"}) {
+		t.Fatalf("outbound order = %v, want %v", got, []string{"chOutbound", "globalOutbound", "writeHandler"})
+	}
+
+	if err := serverChannel.Write("from-server"); err != nil {
+		t.Fatalf("server Write failed: %v", err)
+	}
+
+	select {
+	case got := <-clientReceived:
+		if got != "from-server" {
+			t.Fatalf("client received %q, want %q", got, "from-server")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected client router to receive the server message")
+	}
+
+	if got := snapshot(inboundOrder); !equalStrings(got, []string{"globalInbound", "chInbound", "router"}) {
+		t.Fatalf("inbound order = %v, want %v", got, []string{"globalInbound", "chInbound", "router"})
+	}
+}
+
 func TestClient_OptionsSmoke(t *testing.T) {
 	_ = NewClient(
 		"tcp",
@@ -798,4 +927,59 @@ func waitFor(t *testing.T, timeout time.Duration, predicate func() bool) {
 	if !predicate() {
 		t.Fatal("condition not met before timeout")
 	}
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func messageFlowMiddleware(name string, record func(string)) less.Middleware {
+	return func(next less.Handler) less.Handler {
+		return func(ctx context.Context, ch less.Channel, msg interface{}) error {
+			record(name)
+			return next(ctx, ch, msg)
+		}
+	}
+}
+
+type messageFlowPacketCodec struct {
+	onEncode func()
+}
+
+func (messageFlowPacketCodec) Name() string { return "message-flow-packet" }
+func (c messageFlowPacketCodec) Encode(dst codec.WriterBuffer, payload codec.Frame) error {
+	if c.onEncode != nil {
+		c.onEncode()
+	}
+	header, err := dst.Malloc(4)
+	if err != nil {
+		return err
+	}
+	binary.BigEndian.PutUint32(header, uint32(len(payload.Bytes())))
+	return dst.WriteFrame(payload)
+}
+func (c messageFlowPacketCodec) Decode(src codec.ReaderBuffer) (codec.Frame, error) {
+	header, err := src.Next(4)
+	if err != nil {
+		return nil, err
+	}
+	return src.Slice(int(binary.BigEndian.Uint32(header)))
+}
+
+type messageFlowPayloadCodec struct{}
+
+func (messageFlowPayloadCodec) Name() string { return "message-flow-payload" }
+func (messageFlowPayloadCodec) Marshal(message any) (codec.Frame, error) {
+	return framebuf.NewFrame([]byte(message.(string))), nil
+}
+func (messageFlowPayloadCodec) Unmarshal(payload codec.Frame) (any, error) {
+	return string(payload.Bytes()), nil
 }
