@@ -38,7 +38,17 @@
 
 ## Test Architecture
 
-新增或整理一个公共 API 视角的 e2e 测试文件，建议放在 `client` 包测试中，因为 client 已经是 server-client 真实链路的自然入口。
+新增一个公共 API 视角的 e2e 测试目录，目标路径为 `test/e2e/e2e_test.go`。
+
+测试包名使用 `e2e_test`，只从模块外部导入公开包，例如：
+
+- `github.com/emove/less`
+- `github.com/emove/less/client`
+- `github.com/emove/less/server`
+- `github.com/emove/less/codec/packet`
+- `github.com/emove/less/codec/payload`
+
+这样可以强制 Tier 1 只验证公开契约，不依赖 `client` 包私有 helper，也不绕到 `internal` 实现细节。
 
 测试 harness 应该提供以下能力：
 
@@ -200,7 +210,9 @@ Tier 1 是 CI 门禁，不应成为压力测试。
 
 ## Implementation Notes
 
-实现计划应优先复用现有 `client/client_test.go` 中的真实 TCP 测试 helper，但需要把当前测试中隐含的行为改成明确断言：
+实现计划可以参考现有 `client/client_test.go` 中的真实 TCP 测试 helper，但 Tier 1 e2e 需要在 `test/e2e` 中定义自己的小型 harness，避免依赖其他包的私有测试实现。
+
+可参考但不直接复用的 helper 包括：
 
 - `reserveTCPAddr`
 - `dialClientEventually`
@@ -209,4 +221,3 @@ Tier 1 是 CI 门禁，不应成为压力测试。
 - `messageFlowPayloadCodec`
 
 当前 `server/server_test.go` 中基于 `localhost:8888`、package-level wait group 和日志观察的测试可以保留或后续整理，但 Tier 1 e2e 门禁应避免继续依赖这种形态。
-
