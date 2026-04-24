@@ -100,6 +100,42 @@ func dialClientWithTimeout(cli *client.Client) error {
 	return context.DeadlineExceeded
 }
 
+func dialRawEventually(t *testing.T, addr string) net.Conn {
+	t.Helper()
+
+	deadline := time.Now().Add(defaultWaitTimeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err == nil {
+			return conn
+		}
+		lastErr = err
+		time.Sleep(10 * time.Millisecond)
+	}
+	if lastErr != nil {
+		t.Fatalf("raw dial did not succeed before deadline: %v", lastErr)
+	}
+	t.Fatal("raw dial did not succeed before deadline")
+	return nil
+}
+
+func writeRawVariableLengthPacket(t *testing.T, conn net.Conn, declaredLength uint32, body string) {
+	t.Helper()
+
+	header := make([]byte, packetHeaderSize)
+	binary.BigEndian.PutUint32(header, declaredLength)
+	if _, err := conn.Write(header); err != nil {
+		t.Fatalf("write raw packet header: %v", err)
+	}
+	if body == "" {
+		return
+	}
+	if _, err := conn.Write([]byte(body)); err != nil {
+		t.Fatalf("write raw packet body: %v", err)
+	}
+}
+
 func newTextClient(addr string, opts ...client.CliOption) *client.Client {
 	base := []client.CliOption{
 		client.WithPacketCodec(packet.NewVariableLengthCodec()),
@@ -128,6 +164,51 @@ func receiveStringBeforeDeadline(t *testing.T, ch <-chan string, want, descripti
 		}
 	case <-time.After(defaultWaitTimeout):
 		t.Fatalf("timed out waiting for %s", description)
+	}
+}
+
+func TestTier1E2E_MalformedPacketClosesConnectionOnce(t *testing.T) {
+	addr := reserveTCPAddr(t)
+
+	var serverOnChannel eventCounter
+	var serverClosed eventCounter
+	var handlerCalls eventCounter
+
+	srv := newTextServer(
+		addr,
+		server.WithOnChannel(func(ctx context.Context, ch less.Channel) (context.Context, error) {
+			serverOnChannel.inc()
+			return ctx, nil
+		}),
+		server.WithOnChannelClosed(func(context.Context, less.Channel, error) {
+			serverClosed.inc()
+		}),
+		server.WithRouter(func(context.Context, less.Channel, any) (less.Handler, error) {
+			return func(context.Context, less.Channel, any) error {
+				handlerCalls.inc()
+				return nil
+			}, nil
+		}),
+	)
+	srv.Run()
+	t.Cleanup(func() {
+		srv.Shutdown(context.Background(), nil)
+	})
+
+	conn := dialRawEventually(t, addr)
+	writeRawVariableLengthPacket(t, conn, 32, "short")
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close raw conn: %v", err)
+	}
+
+	serverOnChannel.waitFor(t, 1)
+	serverClosed.waitFor(t, 1)
+
+	if got := serverClosed.value(); got != 1 {
+		t.Fatalf("server OnChannelClosed count = %d, want 1", got)
+	}
+	if got := handlerCalls.value(); got != 0 {
+		t.Fatalf("handler calls = %d, want 0", got)
 	}
 }
 
