@@ -187,6 +187,90 @@ func TestClient_DialContextCancellationClosesCurrentSession(t *testing.T) {
 	}
 }
 
+func TestClient_DialContextCancellationClosesConnectedInFlightDial(t *testing.T) {
+	trans := &fakeTransport{}
+	conn := &fakeConn{}
+	connected := make(chan struct{})
+	releaseDialReturn := make(chan struct{})
+	done := make(chan error, 1)
+
+	t.Cleanup(func() {
+		select {
+		case <-releaseDialReturn:
+		default:
+			close(releaseDialReturn)
+		}
+	})
+
+	trans.dial = func(network, addr string, driver transport.EventDriver) error {
+		_, err := driver.OnConnect(context.Background(), conn)
+		if err != nil {
+			return err
+		}
+		close(connected)
+		<-releaseDialReturn
+		return nil
+	}
+
+	cli := NewClient(
+		"tcp",
+		"127.0.0.1:18888",
+		WithTransport(trans),
+		WithRouter(noopRouter()),
+		WithOnChannelClosed(func(_ context.Context, _ less.Channel, err error) {
+			select {
+			case done <- err:
+			default:
+			}
+		}),
+	)
+	t.Cleanup(func() { cli.Close(nil) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	dialDone := make(chan error, 1)
+	go func() {
+		dialDone <- cli.Dial(ctx)
+	}()
+
+	select {
+	case <-connected:
+	case <-time.After(time.Second):
+		t.Fatal("Dial did not reach connected state")
+	}
+
+	if cli.Channel() == nil {
+		t.Fatal("expected connected in-flight dial to publish an active channel")
+	}
+
+	cancel()
+
+	waitFor(t, time.Second, func() bool {
+		return cli.Channel() == nil && !conn.IsActive()
+	})
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("OnChannelClosed error = %v, want %v", err, context.Canceled)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected OnChannelClosed to observe context cancellation before Dial returned")
+	}
+
+	close(releaseDialReturn)
+
+	select {
+	case err := <-dialDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Dial error = %v, want %v", err, context.Canceled)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Dial did not return after cancellation")
+	}
+}
+
 func TestClient_RemoteDisconnectClearsSessionAndAllowsRedial(t *testing.T) {
 	trans := &fakeTransport{}
 	var connectCtx context.Context

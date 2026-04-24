@@ -106,6 +106,8 @@ func (cli *Client) Dial(ctx context.Context) error {
 		return sessionRetiredErr(dialCtx)
 	}
 
+	go cli.closeWhenDialContextDone(sessionID, ctx, dialCtx)
+
 	if err := cli.ops.transport.Dial(cli.network, cli.addr, handler); err != nil {
 		cli.closeSessionIfCurrent(sessionID, err, false)
 		return err
@@ -115,8 +117,6 @@ func (cli *Client) Dial(ctx context.Context) error {
 		cancelFunc()
 		return sessionRetiredErr(dialCtx)
 	}
-
-	go cli.closeWhenDialContextDone(sessionID, ctx, dialCtx)
 
 	return nil
 }
