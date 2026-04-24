@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -115,6 +116,19 @@ func newTextServer(addr string, opts ...server.SerOption) *server.Server {
 	}
 	base = append(base, opts...)
 	return server.NewServer(addr, base...)
+}
+
+func receiveStringBeforeDeadline(t *testing.T, ch <-chan string, want, description string) {
+	t.Helper()
+
+	select {
+	case got := <-ch:
+		if got != want {
+			t.Fatalf("%s = %q, want %q", description, got, want)
+		}
+	case <-time.After(defaultWaitTimeout):
+		t.Fatalf("timed out waiting for %s", description)
+	}
 }
 
 func TestTier1E2E_FullLifecycle(t *testing.T) {
@@ -237,6 +251,81 @@ func TestTier1E2E_FullLifecycle(t *testing.T) {
 	}
 	if got := clientClosed.value(); got != 1 {
 		t.Fatalf("client OnChannelClosed count = %d, want 1", got)
+	}
+}
+
+func TestTier1E2E_CodecAndFrameBoundaries(t *testing.T) {
+	addr := reserveTCPAddr(t)
+
+	serverChannelReady := make(chan less.Channel, 1)
+	serverReceived := make(chan string, 16)
+	clientReceived := make(chan string, 16)
+
+	srv := newTextServer(
+		addr,
+		server.WithOnChannel(func(ctx context.Context, ch less.Channel) (context.Context, error) {
+			select {
+			case serverChannelReady <- ch:
+			default:
+			}
+			return ctx, nil
+		}),
+		server.WithRouter(func(context.Context, less.Channel, any) (less.Handler, error) {
+			return func(_ context.Context, _ less.Channel, message any) error {
+				serverReceived <- message.(string)
+				return nil
+			}, nil
+		}),
+	)
+	srv.Run()
+	t.Cleanup(func() {
+		srv.Shutdown(context.Background(), nil)
+	})
+
+	cli := newTextClient(
+		addr,
+		client.WithRouter(func(context.Context, less.Channel, any) (less.Handler, error) {
+			return func(_ context.Context, _ less.Channel, message any) error {
+				clientReceived <- message.(string)
+				return nil
+			}, nil
+		}),
+	)
+	t.Cleanup(func() {
+		cli.Close(nil)
+	})
+
+	dialClientEventually(t, cli)
+
+	clientChannel := cli.Channel()
+	if clientChannel == nil {
+		t.Fatal("expected client channel to be non-nil")
+	}
+
+	var serverChannel less.Channel
+	select {
+	case serverChannel = <-serverChannelReady:
+	case <-time.After(defaultWaitTimeout):
+		t.Fatal("expected server OnChannel hook to capture the channel")
+	}
+
+	payloads := []string{"ping"}
+	for i := 0; i < 10; i++ {
+		payloads = append(payloads, fmt.Sprintf("burst-%02d", i))
+	}
+	payloads = append(payloads, strings.Repeat("x", 64*1024))
+
+	for _, payload := range payloads {
+		if err := clientChannel.Write(payload); err != nil {
+			t.Fatalf("client Write(%q) failed: %v", payload, err)
+		}
+		receiveStringBeforeDeadline(t, serverReceived, payload, "server received payload")
+
+		reply := "reply:" + payload
+		if err := serverChannel.Write(reply); err != nil {
+			t.Fatalf("server Write(%q) failed: %v", reply, err)
+		}
+		receiveStringBeforeDeadline(t, clientReceived, reply, "client received reply")
 	}
 }
 
