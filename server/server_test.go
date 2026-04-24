@@ -14,7 +14,6 @@ import (
 
 	"github.com/emove/less"
 	"github.com/emove/less/codec"
-	engine "github.com/emove/less/internal/engine"
 	"github.com/emove/less/internal/engine/framebuf"
 
 	"github.com/emove/less/log"
@@ -139,20 +138,15 @@ func TestServer_Run_UsesGenericEndpointHandler(t *testing.T) {
 		t.Fatal("server did not start transport listener")
 	}
 
-	handler, ok := blocking.driver.(engine.TransHandler)
-	if !ok {
-		t.Fatalf("transport driver type = %T, want engine.TransHandler", blocking.driver)
-	}
-
 	inbound := append(make([]byte, 4), []byte("msg:through-run")...)
 	binary.BigEndian.PutUint32(inbound[:4], uint32(len("msg:through-run")))
 	conn := &captureConn{readData: inbound}
 
-	ctx, err := handler.OnConnect(context.Background(), conn)
+	ctx, err := blocking.driver.OnConnect(context.Background(), conn)
 	if err != nil {
 		t.Fatalf("OnConnect failed: %v", err)
 	}
-	if err := handler.OnMessage(ctx, conn); err != nil {
+	if err := blocking.driver.OnMessage(ctx, conn); err != nil {
 		t.Fatalf("OnMessage failed: %v", err)
 	}
 
