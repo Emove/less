@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -235,5 +237,120 @@ func TestTier1E2E_FullLifecycle(t *testing.T) {
 	}
 	if got := clientClosed.value(); got != 1 {
 		t.Fatalf("client OnChannelClosed count = %d, want 1", got)
+	}
+}
+
+func TestTier1E2E_ConcurrentClients(t *testing.T) {
+	const (
+		clientCount       = 8
+		messagesPerClient = 5
+	)
+
+	addr := reserveTCPAddr(t)
+
+	var serverOnChannel eventCounter
+	var serverClosed eventCounter
+	var serverReceived eventCounter
+
+	srv := newTextServer(
+		addr,
+		server.WithOnChannel(func(ctx context.Context, ch less.Channel) (context.Context, error) {
+			serverOnChannel.inc()
+			return ctx, nil
+		}),
+		server.WithOnChannelClosed(func(context.Context, less.Channel, error) {
+			serverClosed.inc()
+		}),
+		server.WithRouter(func(context.Context, less.Channel, any) (less.Handler, error) {
+			return func(_ context.Context, ch less.Channel, message any) error {
+				serverReceived.inc()
+				return ch.Write("ack:" + message.(string))
+			}, nil
+		}),
+	)
+	srv.Run()
+	t.Cleanup(func() {
+		srv.Shutdown(context.Background(), nil)
+	})
+
+	errs := make(chan error, clientCount)
+	var wg sync.WaitGroup
+	wg.Add(clientCount)
+
+	for clientID := 0; clientID < clientCount; clientID++ {
+		clientID := clientID
+		go func() {
+			defer wg.Done()
+
+			acks := make(chan string, messagesPerClient)
+			cli := newTextClient(
+				addr,
+				client.WithRouter(func(context.Context, less.Channel, any) (less.Handler, error) {
+					return func(_ context.Context, _ less.Channel, message any) error {
+						acks <- message.(string)
+						return nil
+					}, nil
+				}),
+			)
+			defer cli.Close(nil)
+
+			if err := dialClientWithTimeout(cli); err != nil {
+				errs <- fmt.Errorf("client %d dial: %w", clientID, err)
+				return
+			}
+
+			ch := cli.Channel()
+			if ch == nil {
+				errs <- fmt.Errorf("client %d channel is nil after dial", clientID)
+				return
+			}
+
+			for seq := 0; seq < messagesPerClient; seq++ {
+				msg := fmt.Sprintf("client=%d seq=%d", clientID, seq)
+				if err := ch.Write(msg); err != nil {
+					errs <- fmt.Errorf("client %d write seq %d: %w", clientID, seq, err)
+					return
+				}
+
+				want := "ack:" + msg
+				select {
+				case got := <-acks:
+					if got != want {
+						errs <- fmt.Errorf("client %d ack seq %d = %q, want %q", clientID, seq, got, want)
+						return
+					}
+				case <-time.After(defaultWaitTimeout):
+					errs <- fmt.Errorf("client %d timed out waiting for ack seq %d", clientID, seq)
+					return
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	if t.Failed() {
+		return
+	}
+
+	serverOnChannel.waitFor(t, clientCount)
+	if got := serverOnChannel.value(); got != clientCount {
+		t.Fatalf("server OnChannel count = %d, want %d", got, clientCount)
+	}
+
+	wantReceived := int32(clientCount * messagesPerClient)
+	if got := serverReceived.value(); got != wantReceived {
+		t.Fatalf("server received count = %d, want %d", got, wantReceived)
+	}
+
+	serverClosed.waitFor(t, clientCount)
+	if got := serverClosed.value(); got != clientCount {
+		t.Fatalf("server OnChannelClosed count = %d, want %d", got, clientCount)
 	}
 }
