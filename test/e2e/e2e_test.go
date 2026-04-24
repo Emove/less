@@ -354,3 +354,78 @@ func TestTier1E2E_ConcurrentClients(t *testing.T) {
 		t.Fatalf("server OnChannelClosed count = %d, want %d", got, clientCount)
 	}
 }
+
+func TestTier1E2E_ServerShutdownClosesActiveClients(t *testing.T) {
+	const clientCount = 4
+
+	addr := reserveTCPAddr(t)
+
+	var serverOnChannel eventCounter
+	var serverClosed eventCounter
+	var clientClosed eventCounter
+
+	srv := newTextServer(
+		addr,
+		server.WithOnChannel(func(ctx context.Context, ch less.Channel) (context.Context, error) {
+			serverOnChannel.inc()
+			return ctx, nil
+		}),
+		server.WithOnChannelClosed(func(context.Context, less.Channel, error) {
+			serverClosed.inc()
+		}),
+		server.WithRouter(func(context.Context, less.Channel, any) (less.Handler, error) {
+			return func(context.Context, less.Channel, any) error {
+				return nil
+			}, nil
+		}),
+	)
+	srv.Run()
+	t.Cleanup(func() {
+		srv.Shutdown(context.Background(), nil)
+	})
+
+	clients := make([]*client.Client, 0, clientCount)
+	for i := 0; i < clientCount; i++ {
+		cli := newTextClient(
+			addr,
+			client.WithOnChannelClosed(func(context.Context, less.Channel, error) {
+				clientClosed.inc()
+			}),
+			client.WithRouter(func(context.Context, less.Channel, any) (less.Handler, error) {
+				return func(context.Context, less.Channel, any) error {
+					return nil
+				}, nil
+			}),
+		)
+		clients = append(clients, cli)
+	}
+	t.Cleanup(func() {
+		for _, cli := range clients {
+			cli.Close(nil)
+		}
+	})
+
+	for _, cli := range clients {
+		dialClientEventually(t, cli)
+	}
+
+	serverOnChannel.waitFor(t, clientCount)
+
+	srv.Shutdown(context.Background(), errors.New("test shutdown"))
+
+	serverClosed.waitFor(t, clientCount)
+	clientClosed.waitFor(t, clientCount)
+
+	for idx, cli := range clients {
+		waitUntil(t, defaultWaitTimeout, func() bool {
+			return cli.Channel() == nil
+		}, "expected client %d channel to become nil after server shutdown", idx)
+	}
+
+	if got := serverClosed.value(); got != clientCount {
+		t.Fatalf("server OnChannelClosed count = %d, want %d", got, clientCount)
+	}
+	if got := clientClosed.value(); got != clientCount {
+		t.Fatalf("client OnChannelClosed count = %d, want %d", got, clientCount)
+	}
+}
