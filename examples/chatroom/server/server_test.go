@@ -161,13 +161,22 @@ func TestNewChatServer(t *testing.T) {
 	srv.Run()
 	t.Cleanup(func() { srv.Shutdown(context.Background(), nil) })
 
+	inbound := make(chan *chat.Message, 1)
 	cli := client.NewClient(
 		"tcp",
 		addr,
 		client.WithPacketCodec(packet.NewVariableLengthCodec()),
 		client.WithPayloadCodec(chat.NewJSONCodec()),
 		client.WithRouter(func(context.Context, less.Channel, interface{}) (less.Handler, error) {
-			return func(context.Context, less.Channel, interface{}) error {
+			return func(_ context.Context, _ less.Channel, msg interface{}) error {
+				message, ok := msg.(*chat.Message)
+				if !ok {
+					return nil
+				}
+				select {
+				case inbound <- message:
+				default:
+				}
 				return nil
 			}, nil
 		}),
@@ -179,6 +188,31 @@ func TestNewChatServer(t *testing.T) {
 	}
 	if cli.Channel() == nil {
 		t.Fatal("client Channel() = nil, want active channel")
+	}
+	if err := cli.Channel().Write(chat.SetName("alice")); err != nil {
+		t.Fatalf("Write SetName failed: %v", err)
+	}
+
+	want := chat.System("alice joined")
+	select {
+	case got := <-inbound:
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("inbound message = %#v, want %#v", got, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("timed out waiting for inbound message %#v", want)
+	}
+}
+
+func TestCheckListenAddressAvailableReturnsErrorForOccupiedAddress(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	if err := checkListenAddressAvailable(listener.Addr().String()); err == nil {
+		t.Fatal("checkListenAddressAvailable() error = nil, want error")
 	}
 }
 

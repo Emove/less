@@ -21,6 +21,11 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8888", "chatroom listen address")
 	flag.Parse()
 
+	if err := checkListenAddressAvailable(*addr); err != nil {
+		fmt.Fprintf(os.Stderr, "chatroom server failed to listen on %s: %v\n", *addr, err)
+		os.Exit(1)
+	}
+
 	h := newHub()
 	srv := newChatServer(*addr, h)
 	srv.Run()
@@ -47,6 +52,14 @@ func newChatServer(addr string, h *hub) *server.Server {
 		server.WithOnChannelClosed(onChannelClosed(h)),
 		server.WithRouter(newRouter(h)),
 	)
+}
+
+func checkListenAddressAvailable(addr string) error {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return listener.Close()
 }
 
 func waitForServerReady(addr string, timeout time.Duration) error {
