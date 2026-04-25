@@ -6,8 +6,11 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/emove/less"
+	"github.com/emove/less/client"
+	"github.com/emove/less/codec/packet"
 	"github.com/emove/less/examples/chatroom/chat"
 )
 
@@ -153,8 +156,85 @@ func TestRouterSelectsHandlersByType(t *testing.T) {
 }
 
 func TestNewChatServer(t *testing.T) {
-	srv := newChatServer("127.0.0.1:0", newHub())
-	if srv == nil {
-		t.Fatal("newChatServer() = nil, want server")
+	addr := reserveTCPAddr(t)
+	srv := newChatServer(addr, newHub())
+	srv.Run()
+	t.Cleanup(func() { srv.Shutdown(context.Background(), nil) })
+
+	cli := client.NewClient(
+		"tcp",
+		addr,
+		client.WithPacketCodec(packet.NewVariableLengthCodec()),
+		client.WithPayloadCodec(chat.NewJSONCodec()),
+		client.WithRouter(func(context.Context, less.Channel, interface{}) (less.Handler, error) {
+			return func(context.Context, less.Channel, interface{}) error {
+				return nil
+			}, nil
+		}),
+	)
+	t.Cleanup(func() { cli.Close(nil) })
+
+	if err := dialChatClientEventually(t, cli, context.Background()); err != nil {
+		t.Fatalf("Dial failed: %v", err)
+	}
+	if cli.Channel() == nil {
+		t.Fatal("client Channel() = nil, want active channel")
+	}
+}
+
+func TestWaitForServerReadyReturnsWhenAddressDialable(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	accepted := make(chan struct{}, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		_ = conn.Close()
+		accepted <- struct{}{}
+	}()
+
+	if err := waitForServerReady(listener.Addr().String(), time.Second); err != nil {
+		t.Fatalf("waitForServerReady() error = %v, want nil", err)
+	}
+	select {
+	case <-accepted:
+	case <-time.After(time.Second):
+		t.Fatal("waitForServerReady() did not dial listener")
+	}
+}
+
+func reserveTCPAddr(t *testing.T) string {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve tcp addr: %v", err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	return listener.Addr().String()
+}
+
+func dialChatClientEventually(t *testing.T, cli *client.Client, ctx context.Context) error {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	var lastErr error
+	for {
+		err := cli.Dial(ctx)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if time.Now().After(deadline) {
+			return lastErr
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
