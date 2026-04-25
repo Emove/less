@@ -220,3 +220,173 @@ func TestAuthHandlerDuplicateAuthReturnsError(t *testing.T) {
 		t.Fatalf("authHandler() error = %v, want %v", err, errDuplicateAuth)
 	}
 }
+
+func TestWatchdogClosesStaleChannels(t *testing.T) {
+	gw := newGateway(2 * time.Second)
+	stale := &mockChannel{}
+	fresh := &mockChannel{}
+	unauthenticated := &mockChannel{}
+
+	for _, ch := range []*mockChannel{stale, fresh, unauthenticated} {
+		if _, err := onChannel(gw)(context.Background(), ch); err != nil {
+			t.Fatalf("onChannel() error = %v", err)
+		}
+	}
+	if err := authHandler(gw)(context.Background(), stale, protocol.Auth("dev-stale", demoSecret)); err != nil {
+		t.Fatalf("authHandler(stale) error = %v", err)
+	}
+	if err := authHandler(gw)(context.Background(), fresh, protocol.Auth("dev-fresh", demoSecret)); err != nil {
+		t.Fatalf("authHandler(fresh) error = %v", err)
+	}
+
+	now := time.Now()
+	gw.registry.mu.Lock()
+	gw.registry.sessions[stale].lastHeartbeatAt = now.Add(-3 * gw.heartbeatTimeout)
+	gw.registry.sessions[fresh].lastHeartbeatAt = now.Add(-gw.heartbeatTimeout / 2)
+	gw.registry.mu.Unlock()
+
+	closeStaleSessions(gw, now)
+
+	if !stale.closed {
+		t.Fatal("stale channel closed = false, want true")
+	}
+	if !errors.Is(stale.closeErr, errHeartbeatTimeout) {
+		t.Fatalf("stale close err = %v, want %v", stale.closeErr, errHeartbeatTimeout)
+	}
+	if fresh.closed {
+		t.Fatal("fresh channel closed = true, want false")
+	}
+	if unauthenticated.closed {
+		t.Fatal("unauthenticated channel closed = true, want false")
+	}
+}
+
+func TestNewGatewayServerAcceptsDeviceAuth(t *testing.T) {
+	gw := newGateway(2 * time.Second)
+	addr, shutdown := startTestGatewayServerEventually(t, gw)
+	t.Cleanup(shutdown)
+
+	inbound := make(chan any, 4)
+	cli := newTestClient(t, addr, inbound)
+	t.Cleanup(func() { cli.Close(nil) })
+
+	if err := dialGatewayClientEventually(t, cli, context.Background()); err != nil {
+		t.Fatalf("Dial failed: %v", err)
+	}
+
+	ch := cli.Channel()
+	if ch == nil {
+		t.Fatal("Channel() = nil, want active channel")
+	}
+	if err := ch.Write(protocol.Auth("dev-001", demoSecret)); err != nil {
+		t.Fatalf("Write auth failed: %v", err)
+	}
+
+	select {
+	case got := <-inbound:
+		if !reflect.DeepEqual(got, protocol.AuthAck("ok")) {
+			t.Fatalf("auth ack = %#v, want %#v", got, protocol.AuthAck("ok"))
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for auth ack")
+	}
+
+	waitForAuthenticatedSession(t, gw, "dev-001")
+}
+
+func TestCheckListenAddressAvailableReturnsErrorForOccupiedAddress(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	if err := checkListenAddressAvailable(listener.Addr().String()); err == nil {
+		t.Fatal("checkListenAddressAvailable() error = nil, want error")
+	}
+}
+
+func TestWaitForGatewayReadyRejectsNonGatewayListener(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	accepted := make(chan struct{}, 1)
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			accepted <- struct{}{}
+			_ = conn.Close()
+		}
+	}()
+
+	gw := newGateway(2 * time.Second)
+	err = waitForGatewayReady(listener.Addr().String(), gw, 200*time.Millisecond)
+	if err == nil {
+		t.Fatal("waitForGatewayReady() error = nil, want failure for non-gateway listener")
+	}
+
+	select {
+	case <-accepted:
+	case <-time.After(time.Second):
+		t.Fatal("waitForGatewayReady() did not connect to listener")
+	}
+}
+
+func TestDialGatewayClientEventuallyRespectsContextCancellation(t *testing.T) {
+	cli := newTestClient(t, "127.0.0.1:65535", make(chan any, 1))
+	t.Cleanup(func() { cli.Close(nil) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	err := dialGatewayClientEventually(t, cli, ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("dialGatewayClientEventually() error = %v, want %v", err, context.Canceled)
+	}
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("dialGatewayClientEventually() elapsed = %v, want prompt cancellation", elapsed)
+	}
+}
+
+func waitForAuthenticatedSession(t *testing.T, gw *gateway, deviceID string) {
+	t.Helper()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if gatewayHasAuthenticatedSession(gw, deviceID) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for authenticated session for %q", deviceID)
+}
+
+func startTestGatewayServerEventually(t *testing.T, gw *gateway) (string, func()) {
+	t.Helper()
+
+	const maxAttempts = 5
+
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		addr := reserveTCPAddr(t)
+		srv := newGatewayServer(addr, gw)
+		srv.Run()
+
+		if err := waitForGatewayReady(addr, gw, serverReadyTimeout); err == nil {
+			return addr, func() { srv.Shutdown(context.Background(), nil) }
+		} else {
+			lastErr = err
+			srv.Shutdown(context.Background(), err)
+		}
+	}
+
+	t.Fatalf("startTestGatewayServerEventually() error = %v", lastErr)
+	return "", nil
+}
