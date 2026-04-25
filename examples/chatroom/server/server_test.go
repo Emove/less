@@ -151,3 +151,10 @@ func TestRouterSelectsHandlersByType(t *testing.T) {
 		}
 	})
 }
+
+func TestNewChatServer(t *testing.T) {
+	srv := newChatServer("127.0.0.1:0", newHub())
+	if srv == nil {
+		t.Fatal("newChatServer() = nil, want server")
+	}
+}
