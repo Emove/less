@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"reflect"
 	"sync"
@@ -13,6 +14,8 @@ import (
 	"github.com/emove/less/codec/packet"
 	"github.com/emove/less/examples/chatroom/chat"
 )
+
+const defaultWaitTimeout = 3 * time.Second
 
 type mockAddr struct{}
 
@@ -243,6 +246,67 @@ func TestWaitForServerReadyReturnsWhenAddressDialable(t *testing.T) {
 	}
 }
 
+func TestChatroomTwoClientsBroadcastAndLeave(t *testing.T) {
+	addr := reserveTCPAddr(t)
+	h := newHub()
+	srv := newChatServer(addr, h)
+	srv.Run()
+	t.Cleanup(func() { srv.Shutdown(context.Background(), nil) })
+
+	aliceMessages := make(chan *chat.Message, 8)
+	bobMessages := make(chan *chat.Message, 8)
+	alice := newTestClient(t, addr, aliceMessages)
+	bob := newTestClient(t, addr, bobMessages)
+	t.Cleanup(func() {
+		alice.Close(nil)
+		bob.Close(nil)
+	})
+
+	if err := dialChatClientEventually(t, alice, context.Background()); err != nil {
+		t.Fatalf("alice dial: %v", err)
+	}
+	if err := dialChatClientEventually(t, bob, context.Background()); err != nil {
+		t.Fatalf("bob dial: %v", err)
+	}
+
+	aliceChannel := alice.Channel()
+	bobChannel := bob.Channel()
+	if aliceChannel == nil || bobChannel == nil {
+		t.Fatal("expected both clients to have active channels")
+	}
+
+	if err := aliceChannel.Write(chat.SetName("alice")); err != nil {
+		t.Fatalf("alice set name: %v", err)
+	}
+	if err := bobChannel.Write(chat.SetName("bob")); err != nil {
+		t.Fatalf("bob set name: %v", err)
+	}
+
+	waitUntil(t, func() bool {
+		return len(aliceMessages) >= 2 && len(bobMessages) >= 2
+	}, "expected both clients to receive join messages")
+
+	if err := aliceChannel.Write(chat.Chat("", "hello")); err != nil {
+		t.Fatalf("alice chat: %v", err)
+	}
+
+	gotChat := receiveMatchingMessage(t, bobMessages, "bob chat broadcast", func(msg *chat.Message) bool {
+		return reflect.DeepEqual(msg, chat.Chat("alice", "hello"))
+	})
+	if !reflect.DeepEqual(gotChat, chat.Chat("alice", "hello")) {
+		t.Fatalf("bob chat = %#v, want %#v", gotChat, chat.Chat("alice", "hello"))
+	}
+
+	alice.Close(nil)
+
+	gotLeave := receiveMatchingMessage(t, bobMessages, "bob leave message", func(msg *chat.Message) bool {
+		return msg.Type == chat.TypeSystem && msg.Text == "alice left"
+	})
+	if !reflect.DeepEqual(gotLeave, chat.System("alice left")) {
+		t.Fatalf("bob leave = %#v, want %#v", gotLeave, chat.System("alice left"))
+	}
+}
+
 func reserveTCPAddr(t *testing.T) string {
 	t.Helper()
 
@@ -253,6 +317,59 @@ func reserveTCPAddr(t *testing.T) string {
 	defer func() { _ = listener.Close() }()
 
 	return listener.Addr().String()
+}
+
+func waitUntil(t *testing.T, predicate func() bool, failure string) {
+	t.Helper()
+
+	deadline := time.Now().Add(defaultWaitTimeout)
+	for time.Now().Before(deadline) {
+		if predicate() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !predicate() {
+		t.Fatal(failure)
+	}
+}
+
+func receiveMatchingMessage(t *testing.T, messages <-chan *chat.Message, description string, match func(*chat.Message) bool) *chat.Message {
+	t.Helper()
+
+	deadline := time.After(defaultWaitTimeout)
+	for {
+		select {
+		case msg := <-messages:
+			if match(msg) {
+				return msg
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for %s", description)
+			return nil
+		}
+	}
+}
+
+func newTestClient(t *testing.T, addr string, inbound chan<- *chat.Message) *client.Client {
+	t.Helper()
+
+	return client.NewClient(
+		"tcp",
+		addr,
+		client.WithPacketCodec(packet.NewVariableLengthCodec()),
+		client.WithPayloadCodec(chat.NewJSONCodec()),
+		client.WithRouter(func(context.Context, less.Channel, interface{}) (less.Handler, error) {
+			return func(_ context.Context, _ less.Channel, msg interface{}) error {
+				message, ok := msg.(*chat.Message)
+				if !ok {
+					return fmt.Errorf("unexpected message type %T", msg)
+				}
+				inbound <- message
+				return nil
+			}, nil
+		}),
+	)
 }
 
 func dialChatClientEventually(t *testing.T, cli *client.Client, ctx context.Context) error {
