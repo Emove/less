@@ -25,8 +25,6 @@ Less 是一个轻量、可组合的 Go 网络框架。当前仓库的公开使�
 - 默认传输层为 `transport/tcp`
 - 默认编解码组合为“变长包 + 文本负载”
 - server 和 client 都支持 `OnChannel`、`OnChannelClosed`、中间件、路由、PacketCodec、PayloadCodec 配置
-- `internal/...` 都属于实现细节，不应作为外部依赖
-- `go.mod` 当前没有生产依赖
 
 ## 包结构总览
 

@@ -25,9 +25,6 @@ The repository currently has a working server/client path, built-in codecs, a ru
 - Default transport is TCP via `transport/tcp`
 - Default codec stack is variable-length packet codec + text payload codec
 - Server and client both support `OnChannel`, `OnChannelClosed`, middleware, router, packet codec, and payload codec options
-- `internal/...` packages are implementation details and should not be imported by consumers
-- The module has no external production dependencies in `go.mod`
-
 ## Package Overview
 
 | Package | Purpose |
