@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"reflect"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -294,6 +295,72 @@ func TestNewGatewayServerAcceptsDeviceAuth(t *testing.T) {
 	waitForAuthenticatedSession(t, gw, "dev-001")
 }
 
+func TestDeviceGatewayFullFlow(t *testing.T) {
+	gw := newGateway(2 * time.Second)
+	addr, shutdown := startTestGatewayServerEventually(t, gw)
+	t.Cleanup(shutdown)
+
+	inbound := make(chan any, 8)
+	cli := newTestClient(t, addr, inbound)
+	t.Cleanup(func() { cli.Close(nil) })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	if err := dialGatewayClientEventually(t, cli, ctx); err != nil {
+		t.Fatalf("Dial failed: %v", err)
+	}
+
+	ch := cli.Channel()
+	if ch == nil {
+		t.Fatal("Channel() = nil, want active channel")
+	}
+
+	const deviceID = "dev-full-flow"
+	if err := ch.Write(protocol.Auth(deviceID, demoSecret)); err != nil {
+		t.Fatalf("Write auth failed: %v", err)
+	}
+
+	authAck := waitForAuthAck(t, inbound)
+	if !reflect.DeepEqual(authAck, protocol.AuthAck("ok")) {
+		t.Fatalf("auth ack = %#v, want %#v", authAck, protocol.AuthAck("ok"))
+	}
+
+	waitForAuthenticatedSession(t, gw, deviceID)
+	beforeHeartbeat := sessionForDeviceID(t, gw, deviceID).lastHeartbeatAt
+
+	if err := ch.Write(protocol.Heartbeat(1714032000)); err != nil {
+		t.Fatalf("Write heartbeat failed: %v", err)
+	}
+
+	waitForHeartbeatAfter(t, gw, deviceID, beforeHeartbeat)
+
+	if err := ch.Write(protocol.Telemetry(map[string]string{"humidity": "48", "temp": "23.4"})); err != nil {
+		t.Fatalf("Write telemetry failed: %v", err)
+	}
+
+	command := waitForCommand(t, inbound)
+	if command.RequestID == 0 {
+		t.Fatalf("command request id = %d, want non-zero", command.RequestID)
+	}
+	if command.Name != "reboot" {
+		t.Fatalf("command name = %q, want reboot", command.Name)
+	}
+
+	if err := ch.Write(protocol.CommandAck(command.RequestID, "ok")); err != nil {
+		t.Fatalf("Write command ack failed: %v", err)
+	}
+
+	waitForCommandAckObserved(t, gw, deviceID, command.RequestID)
+
+	if _, ok := sessionByDeviceID(gw, deviceID); !ok {
+		t.Fatal("sessionByDeviceID() ok = false, want true before close")
+	}
+
+	cli.Close(nil)
+	waitForSessionGone(t, gw, deviceID)
+}
+
 func TestCheckListenAddressAvailableReturnsErrorForOccupiedAddress(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -366,6 +433,142 @@ func waitForAuthenticatedSession(t *testing.T, gw *gateway, deviceID string) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for authenticated session for %q", deviceID)
+}
+
+func waitForAuthAck(t *testing.T, inbound <-chan any) *protocol.AuthAckMessage {
+	t.Helper()
+
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+
+	for {
+		select {
+		case msg := <-inbound:
+			authAck, ok := msg.(*protocol.AuthAckMessage)
+			if ok {
+				return authAck
+			}
+		case <-deadline.C:
+			t.Fatal("timed out waiting for auth ack")
+		}
+	}
+}
+
+func waitForCommand(t *testing.T, inbound <-chan any) *protocol.CommandMessage {
+	t.Helper()
+
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+
+	for {
+		select {
+		case msg := <-inbound:
+			command, ok := msg.(*protocol.CommandMessage)
+			if ok {
+				return command
+			}
+		case <-deadline.C:
+			t.Fatal("timed out waiting for command")
+		}
+	}
+}
+
+func sessionByDeviceID(gw *gateway, deviceID string) (*session, bool) {
+	gw.registry.mu.RLock()
+	defer gw.registry.mu.RUnlock()
+
+	for _, sess := range gw.registry.sessions {
+		if sess.deviceID != deviceID {
+			continue
+		}
+		cp := *sess
+		return &cp, true
+	}
+
+	return nil, false
+}
+
+func sessionForDeviceID(t *testing.T, gw *gateway, deviceID string) *session {
+	t.Helper()
+
+	sess, ok := sessionByDeviceID(gw, deviceID)
+	if !ok {
+		t.Fatalf("sessionByDeviceID(%q) ok = false, want true", deviceID)
+	}
+	return sess
+}
+
+func waitForHeartbeatAfter(t *testing.T, gw *gateway, deviceID string, after time.Time) {
+	t.Helper()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		sess, ok := sessionByDeviceID(gw, deviceID)
+		if ok && sess.lastHeartbeatAt.After(after) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for heartbeat after %v for %q", after, deviceID)
+}
+
+func waitForSessionGone(t *testing.T, gw *gateway, deviceID string) {
+	t.Helper()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := sessionByDeviceID(gw, deviceID); !ok {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for session removal for %q", deviceID)
+}
+
+func waitForCommandAckObserved(t *testing.T, gw *gateway, deviceID string, requestID uint32) {
+	t.Helper()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		sess, ok := sessionByDeviceID(gw, deviceID)
+		if !ok {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+
+		observed, err := sessionCommandAckRequestID(sess)
+		if err == nil && observed == requestID {
+			return
+		}
+		if err != nil {
+			t.Fatalf("session command ack observation unavailable: %v", err)
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for command ack observation for %q request id %d", deviceID, requestID)
+}
+
+func sessionCommandAckRequestID(sess *session) (uint32, error) {
+	value := reflect.ValueOf(sess)
+	if value.Kind() != reflect.Pointer || value.IsNil() {
+		return 0, errors.New("session is nil")
+	}
+
+	field := value.Elem().FieldByName("lastCommandAckRequestID")
+	if !field.IsValid() {
+		return 0, errors.New("missing lastCommandAckRequestID field")
+	}
+	if !field.CanUint() {
+		return 0, errors.New("lastCommandAckRequestID is not an unsigned integer")
+	}
+
+	observation := uint64(field.Uint())
+	if observation > uint64(^uint32(0)) {
+		return 0, errors.New("lastCommandAckRequestID overflows uint32: " + strconv.FormatUint(observation, 10))
+	}
+
+	return uint32(observation), nil
 }
 
 func startTestGatewayServerEventually(t *testing.T, gw *gateway) (string, func()) {

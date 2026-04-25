@@ -11,11 +11,13 @@ import (
 const demoSecret = "demo-secret"
 
 type session struct {
-	deviceID        string
-	channel         less.Channel
-	authenticated   bool
-	connectedAt     time.Time
-	lastHeartbeatAt time.Time
+	deviceID                string
+	channel                 less.Channel
+	authenticated           bool
+	connectedAt             time.Time
+	lastHeartbeatAt         time.Time
+	lastCommandAckRequestID uint32
+	lastCommandAckAt        time.Time
 }
 
 type registry struct {
@@ -96,6 +98,20 @@ func (r *registry) heartbeat(ch less.Channel, at time.Time) bool {
 	}
 
 	sess.lastHeartbeatAt = at
+	return true
+}
+
+func (r *registry) observeCommandAck(ch less.Channel, requestID uint32, at time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sess, ok := r.sessions[ch]
+	if !ok || !sess.authenticated {
+		return false
+	}
+
+	sess.lastCommandAckRequestID = requestID
+	sess.lastCommandAckAt = at
 	return true
 }
 

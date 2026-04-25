@@ -109,7 +109,8 @@ func telemetryHandler(gw *gateway) less.Handler {
 
 func commandAckHandler(gw *gateway) less.Handler {
 	return func(_ context.Context, ch less.Channel, msg interface{}) error {
-		if _, ok := msg.(*protocol.CommandAckMessage); !ok {
+		commandAck, ok := msg.(*protocol.CommandAckMessage)
+		if !ok {
 			return fmt.Errorf("unexpected command ack message type %T", msg)
 		}
 
@@ -118,6 +119,9 @@ func commandAckHandler(gw *gateway) less.Handler {
 			return errSessionMissing
 		}
 		if !sess.authenticated {
+			return errUnauthenticated
+		}
+		if !gw.registry.observeCommandAck(ch, commandAck.RequestID, time.Now()) {
 			return errUnauthenticated
 		}
 
