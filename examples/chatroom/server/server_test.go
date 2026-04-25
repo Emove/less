@@ -103,25 +103,51 @@ func TestRouterSelectsHandlersByType(t *testing.T) {
 	h := newHub()
 	router := newRouter(h)
 
-	tests := []struct {
-		name    string
-		message *chat.Message
-		wantErr bool
-	}{
-		{name: "set name", message: chat.SetName("alice")},
-		{name: "chat", message: chat.Chat("", "hello")},
-		{name: "unknown", message: &chat.Message{Type: "unknown"}, wantErr: true},
-	}
+	t.Run("set name", func(t *testing.T) {
+		ch := &mockChannel{}
+		h.register(ch)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := router(context.Background(), &mockChannel{}, tt.message)
-			if tt.wantErr && err == nil {
-				t.Fatal("router() error = nil, want error")
-			}
-			if !tt.wantErr && err != nil {
-				t.Fatalf("router() error = %v", err)
-			}
-		})
-	}
+		handler, err := router(context.Background(), ch, chat.SetName("alice"))
+		if err != nil {
+			t.Fatalf("router() error = %v", err)
+		}
+
+		if err := handler(context.Background(), ch, chat.SetName("alice")); err != nil {
+			t.Fatalf("handler() error = %v", err)
+		}
+
+		want := []*chat.Message{chat.System("alice joined")}
+		if got := ch.snapshot(); !reflect.DeepEqual(got, want) {
+			t.Fatalf("messages = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("chat", func(t *testing.T) {
+		ch := &mockChannel{}
+		h.register(ch)
+		h.setName(ch, "alice")
+
+		handler, err := router(context.Background(), ch, chat.Chat("", "hello"))
+		if err != nil {
+			t.Fatalf("router() error = %v", err)
+		}
+
+		if err := handler(context.Background(), ch, chat.Chat("", "hello")); err != nil {
+			t.Fatalf("handler() error = %v", err)
+		}
+
+		want := []*chat.Message{chat.Chat("alice", "hello")}
+		if got := ch.snapshot(); !reflect.DeepEqual(got, want) {
+			t.Fatalf("messages = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("unknown", func(t *testing.T) {
+		ch := &mockChannel{}
+
+		_, err := router(context.Background(), ch, &chat.Message{Type: "unknown"})
+		if err == nil {
+			t.Fatal("router() error = nil, want error")
+		}
+	})
 }
