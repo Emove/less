@@ -3,7 +3,7 @@ package payload
 import (
 	"encoding/json"
 	"github.com/emove/less/codec"
-	"github.com/emove/less/pkg/io"
+	"github.com/emove/less/internal/engine/framebuf"
 	"reflect"
 )
 
@@ -29,31 +29,26 @@ func (*jsonPayloadCodec) Name() string {
 	return "json-payload-codec"
 }
 
-func (*jsonPayloadCodec) Marshal(message interface{}, writer io.Writer) (err error) {
-	marshal, err := json.Marshal(message)
-	if err != nil {
-		return err
-	}
-	_, err = writer.Write(marshal)
-	return err
-}
-
-func (jpc *jsonPayloadCodec) UnMarshal(reader io.Reader) (message interface{}, err error) {
-	msg, err := reader.Next(reader.Length())
+func (*jsonPayloadCodec) Marshal(message any) (codec.Frame, error) {
+	b, err := json.Marshal(message)
 	if err != nil {
 		return nil, err
 	}
+	return framebuf.NewFrame(b), nil
+}
 
+func (jpc *jsonPayloadCodec) Unmarshal(payload codec.Frame) (any, error) {
+	body := payload.Bytes()
 	if jpc.msgType != nil {
-		message = reflect.New(jpc.msgType).Interface()
-		err = json.Unmarshal(msg, message)
-		return
+		message := reflect.New(jpc.msgType).Interface()
+		err := json.Unmarshal(body, message)
+		return message, err
 	}
 
 	// unmarshal to map
-	message = make(map[string]interface{})
-	err = json.Unmarshal(msg, &message)
-	return
+	message := make(map[string]interface{})
+	err := json.Unmarshal(body, &message)
+	return message, err
 }
 
 func parseType(msg interface{}) reflect.Type {

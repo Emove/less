@@ -5,9 +5,6 @@ import (
 	"net"
 	"sync/atomic"
 
-	"github.com/emove/less/pkg/io"
-	"github.com/emove/less/pkg/io/reader"
-	"github.com/emove/less/pkg/io/writer"
 	trans "github.com/emove/less/transport"
 )
 
@@ -36,18 +33,8 @@ func (c *connection) Read(buf []byte) (n int, err error) {
 	return c.delegate.Read(buf)
 }
 
-// Reader returns a reader
-func (c *connection) Reader() io.Reader {
-	r := reader.NewBufferReader(c)
-	//if c.readTimeout > 0 {
-	//	r = reader.NewTimeoutReader(r, c.readTimeout)
-	//}
-	return r
-}
-
-// Writer returns a writer
-func (c *connection) Writer() io.Writer {
-	return writer.NewBufferWriter(c.delegate)
+func (c *connection) Write(buf []byte) (n int, err error) {
+	return c.delegate.Write(buf)
 }
 
 // IsActive returns false when connection closed

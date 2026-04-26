@@ -1,0 +1,96 @@
+package engine
+
+import (
+	"math"
+
+	"github.com/emove/less"
+	"github.com/emove/less/codec"
+	"github.com/emove/less/codec/packet"
+	"github.com/emove/less/codec/payload"
+)
+
+type Option func(ops *options)
+
+type options struct {
+	maxChannelSize        uint32
+	maxSendMessageSize    uint32
+	maxReceiveMessageSize uint32
+	packetCodec           codec.PacketCodec
+	payloadCodec          codec.PayloadCodec
+	onChannel             []less.OnChannel
+	onChannelClosed       []less.OnChannelClosed
+	router                less.Router
+	inbound               []less.Middleware
+	outbound              []less.Middleware
+}
+
+func defaultTransOptions() *options {
+	return &options{
+		maxChannelSize:        math.MaxUint32,  // infinity
+		maxSendMessageSize:    1024 * 1024 * 4, // 4M
+		maxReceiveMessageSize: 1024 * 1024 * 4, // 4M
+		packetCodec:           packet.NewVariableLengthCodec(),
+		payloadCodec:          payload.NewTextCodec(),
+	}
+}
+
+func MaxChannelSize(size uint32) Option {
+	return func(ops *options) {
+		ops.maxChannelSize = size
+	}
+}
+
+func MaxSendMessageSize(size uint32) Option {
+	return func(ops *options) {
+		ops.maxSendMessageSize = size
+	}
+}
+
+func MaxReceiveMessageSize(size uint32) Option {
+	return func(ops *options) {
+		ops.maxReceiveMessageSize = size
+	}
+}
+
+// Keep codec configuration on the shared endpoint option surface.
+func WithPacketCodec(codec codec.PacketCodec) Option {
+	return func(ops *options) {
+		ops.packetCodec = codec
+	}
+}
+
+func WithPayloadCodec(codec codec.PayloadCodec) Option {
+	return func(ops *options) {
+		ops.payloadCodec = codec
+	}
+}
+
+func AddOnChannel(onChannel ...less.OnChannel) Option {
+	return func(ops *options) {
+		ops.onChannel = append(ops.onChannel, onChannel...)
+	}
+}
+
+func AddOnChannelClosed(onChannelClosed ...less.OnChannelClosed) Option {
+	return func(ops *options) {
+		ops.onChannelClosed = append(ops.onChannelClosed, onChannelClosed...)
+	}
+}
+
+func AddInboundMiddleware(inbound ...less.Middleware) Option {
+	return func(ops *options) {
+		ops.inbound = append(ops.inbound, inbound...)
+	}
+}
+
+func AddOutboundMiddleware(outbound ...less.Middleware) Option {
+	return func(ops *options) {
+		ops.outbound = append(ops.outbound, outbound...)
+	}
+}
+
+func WithRouter(router less.Router) Option {
+	return func(ops *options) {
+		ops.router = router
+	}
+}

@@ -1,88 +1,40 @@
 package payload
 
 import (
-	"bytes"
-	"github.com/emove/less/pkg/io"
-	"github.com/emove/less/pkg/io/reader"
-	"github.com/emove/less/pkg/io/writer"
+	"github.com/emove/less/internal/engine/framebuf"
 	"reflect"
 	"testing"
 )
 
-func TestTextPayloadCodec_Marshal(t *testing.T) {
-	type args struct {
-		message interface{}
-		writer  io.Writer
+func TestTextCodec_MarshalReturnsFrame(t *testing.T) {
+	te := &textPayloadCodec{}
+
+	got, err := te.Marshal("hello world")
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
 	}
-	buff := &bytes.Buffer{}
-	tests := []struct {
-		args    args
-		want    string
-		wantErr bool
-	}{
-		{
-			args:    args{message: "hello world", writer: writer.NewBufferWriter(buff)},
-			want:    "hello world",
-			wantErr: false,
-		},
-		{
-			args:    args{message: []byte("hello world"), writer: writer.NewBufferWriter(buff)},
-			want:    "hello world",
-			wantErr: false,
-		},
-		{
-			args:    args{message: 1, writer: writer.NewBufferWriter(buff)},
-			want:    "",
-			wantErr: true,
-		},
+
+	frame, ok := any(got).(framebuf.Frame)
+	if !ok {
+		t.Fatalf("Marshal() returned %T, want frame with Bytes() []byte", got)
 	}
-	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
-			te := &textPayloadCodec{}
-			if err := te.Marshal(tt.args.message, tt.args.writer); (err != nil) && tt.wantErr {
-				t.Logf("Marshal() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			_ = tt.args.writer.Flush()
-			if buff.String() != tt.want {
-				t.Errorf("Marshal() want = %v, got = %v", tt.want, buff.String())
-			}
-			buff.Reset()
-		})
+
+	if !reflect.DeepEqual(frame.Bytes(), []byte("hello world")) {
+		t.Fatalf("Marshal() frame bytes = %v, want %v", frame.Bytes(), []byte("hello world"))
 	}
 }
 
-func TestTextPayloadCodec_UnMarshal(t *testing.T) {
-	type args struct {
-		reader io.Reader
-	}
-	tests := []struct {
-		args        args
-		wantMessage interface{}
-		wantErr     bool
-	}{
-		{
-			args:        args{reader: unMarshalReader("hello world", 11)},
-			wantMessage: "hello world",
-			wantErr:     false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
-			te := &textPayloadCodec{}
-			gotMessage, err := te.UnMarshal(tt.args.reader)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("UnMarshal() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(gotMessage, tt.wantMessage) {
-				t.Errorf("UnMarshal() gotMessage = %v, want %v", gotMessage, tt.wantMessage)
-			}
-		})
-	}
-}
+func TestTextCodec_UnmarshalConsumesFrame(t *testing.T) {
+	te := &textPayloadCodec{}
 
-func unMarshalReader(msg string, size uint32) io.Reader {
-	buff := &bytes.Buffer{}
-	buff.WriteString(msg)
-	return reader.NewLimitReader(reader.NewBufferReader(buff), size)
+	frame := framebuf.NewFrame([]byte("hello world"))
+	defer frame.Release()
+	gotMessage, err := te.Unmarshal(frame)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if !reflect.DeepEqual(gotMessage, "hello world") {
+		t.Fatalf("Unmarshal() gotMessage = %v, want %v", gotMessage, "hello world")
+	}
 }

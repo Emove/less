@@ -19,3 +19,4 @@ go.sum
 
 # GOLAND
 .idea/
+.omx/

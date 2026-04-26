@@ -1,10 +1,9 @@
 package packet
 
 import (
+	"bytes"
 	"errors"
 	"github.com/emove/less/codec"
-	"github.com/emove/less/pkg/io"
-	ior "github.com/emove/less/pkg/io/reader"
 )
 
 var ErrMsgSizeGreaterThanMaxLength = errors.New("message package size greater than max length")
@@ -56,33 +55,35 @@ func (dc *delimiterCodec) Name() string {
 	return "delimiter-packet-codec"
 }
 
-func (dc *delimiterCodec) Encode(message interface{}, writer io.Writer, payloadCodec codec.PayloadCodec) (err error) {
+func (dc *delimiterCodec) Encode(writer codec.WriterBuffer, payload codec.Frame) error {
+	body := payload.Bytes()
 
-	// marshal message and write to writer
-	if err = payloadCodec.Marshal(message, writer); err != nil {
-		return
+	// write payload
+	if err := writer.WriteBinary(body); err != nil {
+		return err
 	}
 
 	// append delimiter
 	if dc.autoAppendDelimiter {
-		if _, err = writer.Write(dc.delimiter); err != nil {
-			return
+		if err := writer.WriteBinary(dc.delimiter); err != nil {
+			return err
 		}
 	}
 
-	return writer.Flush()
+	return nil
 }
 
-func (dc *delimiterCodec) Decode(reader io.Reader, payloadCodec codec.PayloadCodec) (message interface{}, err error) {
+func (dc *delimiterCodec) Decode(reader codec.ReaderBuffer) (codec.Frame, error) {
 
 	var peek []byte
+	var err error
 	length, found := 0, false
 	for length = 1; length <= int(dc.maxLength) && !found; length++ {
 		peek, err = reader.Peek(length)
 		if err != nil {
 			return nil, err
 		}
-		if len(peek) >= dc.delimiterLength && string(peek[length-dc.delimiterLength:]) == string(dc.delimiter) {
+		if len(peek) >= dc.delimiterLength && bytes.Equal(peek[length-dc.delimiterLength:], dc.delimiter) {
 			found = true
 		}
 	}
@@ -92,19 +93,20 @@ func (dc *delimiterCodec) Decode(reader io.Reader, payloadCodec codec.PayloadCod
 		return nil, ErrMsgSizeGreaterThanMaxLength
 	}
 
+	bodyLength := length
 	if dc.stripDelimiter {
-		// strip delimiter length
-		length -= dc.delimiterLength
+		bodyLength -= dc.delimiterLength
 	}
 
-	limiterReader := ior.NewLimitReader(reader, uint32(length))
-	defer func() {
-		limiterReader.Release()
-		if dc.stripDelimiter {
-			// release the delimiter buff manually
-			_ = reader.Skip(dc.delimiterLength)
-		}
-	}()
+	body, err := reader.Slice(bodyLength)
+	if err != nil {
+		return nil, err
+	}
 
-	return payloadCodec.UnMarshal(limiterReader)
+	if dc.stripDelimiter {
+		// skip the delimiter bytes
+		_ = reader.Skip(dc.delimiterLength)
+	}
+
+	return body, nil
 }

@@ -36,7 +36,7 @@ const (
 // WithNetwork sets tcp network, TCP, TCP4, TCP6 is allowed
 func WithNetwork(network Network) trans.Option {
 	return func(ops trans.Options) {
-		if tcpOps, ok := ops.(TCPOptions); ok {
+		if tcpOps, ok := ops.(*TCPOptions); ok {
 			switch network {
 			case TCP, TCP4, TCP6:
 				tcpOps.Network = string(network)
@@ -51,7 +51,7 @@ func WithNetwork(network Network) trans.Option {
 // WithTimeout sets dial timeout, only works in client
 func WithTimeout(d time.Duration) trans.Option {
 	return func(ops trans.Options) {
-		if tcpOps, ok := ops.(TCPOptions); ok {
+		if tcpOps, ok := ops.(*TCPOptions); ok {
 			tcpOps.Timeout = d
 		}
 	}
@@ -60,7 +60,7 @@ func WithTimeout(d time.Duration) trans.Option {
 // WithKeepalive sets tcp keepalive
 func WithKeepalive(keepalive bool) trans.Option {
 	return func(ops trans.Options) {
-		if tcpOps, ok := ops.(TCPOptions); ok {
+		if tcpOps, ok := ops.(*TCPOptions); ok {
 			tcpOps.Keepalive = keepalive
 		}
 	}
@@ -69,7 +69,7 @@ func WithKeepalive(keepalive bool) trans.Option {
 // WithKeepalivePeriod sets tcp keepalive period
 func WithKeepalivePeriod(period time.Duration) trans.Option {
 	return func(ops trans.Options) {
-		if tcpOps, ok := ops.(TCPOptions); ok {
+		if tcpOps, ok := ops.(*TCPOptions); ok {
 			tcpOps.KeepAlivePeriod = period
 		}
 	}
@@ -78,7 +78,7 @@ func WithKeepalivePeriod(period time.Duration) trans.Option {
 // WithLinger sets tcp linger
 func WithLinger(linger int) trans.Option {
 	return func(ops trans.Options) {
-		if tcpOps, ok := ops.(TCPOptions); ok {
+		if tcpOps, ok := ops.(*TCPOptions); ok {
 			tcpOps.Linger = linger
 		}
 	}
@@ -87,8 +87,13 @@ func WithLinger(linger int) trans.Option {
 // WithNoDelay sets tcp no delay
 func WithNoDelay(delay bool) trans.Option {
 	return func(ops trans.Options) {
-		if tcpOps, ok := ops.(TCPOptions); ok {
+		if tcpOps, ok := ops.(*TCPOptions); ok {
 			tcpOps.NoDelay = delay
 		}
 	}
+}
+
+func cloneDefaultOptions() *TCPOptions {
+	clone := *DefaultOptions
+	return &clone
 }

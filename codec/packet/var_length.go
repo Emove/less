@@ -3,9 +3,6 @@ package packet
 import (
 	"encoding/binary"
 	"github.com/emove/less/codec"
-	"github.com/emove/less/pkg/io"
-	ior "github.com/emove/less/pkg/io/reader"
-	iow "github.com/emove/less/pkg/io/writer"
 )
 
 // NewVariableLengthCodec returns a variable length packet codec
@@ -21,34 +18,28 @@ func (*variableLengthCodec) Name() string {
 	return "variable-length-packet-codec"
 }
 
-func (*variableLengthCodec) Encode(message interface{}, writer io.Writer, payloadCodec codec.PayloadCodec) (err error) {
+func (*variableLengthCodec) Encode(writer codec.WriterBuffer, payload codec.Frame) error {
+	body := payload.Bytes()
 	header, err := writer.Malloc(binary.MaxVarintLen32)
 	if err != nil {
-		return
-	}
-
-	bufferWriter := iow.WrapBufferWriter(writer)
-	defer bufferWriter.Release()
-
-	if err = payloadCodec.Marshal(message, bufferWriter); err != nil {
 		return err
 	}
 
-	binary.BigEndian.PutUint32(header, uint32(bufferWriter.MallocLength()))
+	binary.BigEndian.PutUint32(header, uint32(len(body)))
 
-	return writer.Flush()
+	if err = writer.WriteFrame(payload); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func (*variableLengthCodec) Decode(reader io.Reader, payloadCodec codec.PayloadCodec) (message interface{}, err error) {
-
+func (*variableLengthCodec) Decode(reader codec.ReaderBuffer) (codec.Frame, error) {
 	header, err := reader.Next(binary.MaxVarintLen32)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	bodyLength := binary.BigEndian.Uint32(header)
-	limitReader := ior.NewLimitReader(reader, bodyLength)
-	defer limitReader.Release()
-
-	return payloadCodec.UnMarshal(limitReader)
+	return reader.Slice(int(bodyLength))
 }
