@@ -20,12 +20,12 @@ import (
 	"github.com/emove/less/transport"
 )
 
-func newServer() *Server {
+func newServer(addr string) *Server {
 	onChannelOption := WithOnChannel(ocAddressChecker(), ocIdentifier())
 	onChannelClosedOption := WithOnChannelClosed(deleteOnChannelClosed())
 	inboundOption := WithInboundMiddleware(newInboundMiddleware())
 	outboundOption := WithOutboundMiddleware(newOutboundMiddleware())
-	return NewServer("localhost", onChannelOption, onChannelClosedOption,
+	return NewServer(addr, onChannelOption, onChannelClosedOption,
 		inboundOption, outboundOption, WithRouter(newRouter()),
 		//DisableGoPool(),
 	)
@@ -34,13 +34,14 @@ func newServer() *Server {
 var wg = &sync.WaitGroup{}
 
 func TestServer_Run(t *testing.T) {
-	server := newServer()
+	addr := reserveTCPAddr(t)
+	server := newServer(addr)
 
 	server.Run()
 
 	wg.Add(1)
 	go func() {
-		mockClient(t)
+		mockClient(t, addr)
 	}()
 
 	wg.Wait()
@@ -260,11 +261,42 @@ func (*typedNilPayloadCodec) Unmarshal(codec.Frame) (any, error) {
 	return nil, nil
 }
 
-func mockClient(t *testing.T) {
-	con, err := net.Dial("tcp", "localhost:8888")
+func reserveTCPAddr(t *testing.T) string {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("client dial err: %v\n", err)
+		t.Fatalf("reserve tcp addr: %v", err)
 	}
+	defer func() {
+		_ = listener.Close()
+	}()
+
+	return listener.Addr().String()
+}
+
+func dialLoopbackEventually(t *testing.T, addr string) net.Conn {
+	t.Helper()
+
+	deadline := time.Now().Add(3 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		con, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err == nil {
+			return con
+		}
+		lastErr = err
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("client dial err: %v\n", lastErr)
+	return nil
+}
+
+func mockClient(t *testing.T, addr string) {
+	con := dialLoopbackEventually(t, addr)
+	defer func() {
+		_ = con.Close()
+	}()
 
 	msg := []byte("hello server!")
 	header := make([]byte, binary.MaxVarintLen32)
@@ -272,7 +304,7 @@ func mockClient(t *testing.T) {
 
 	packet := append(header, msg...)
 
-	_, err = con.Write(packet)
+	_, err := con.Write(packet)
 	if err != nil {
 		t.Fatalf("client write msg err: %v\n", err)
 	}
@@ -298,7 +330,6 @@ func mockClient(t *testing.T) {
 	_, _ = con.Write(append(header, msg...))
 
 	time.Sleep(time.Second)
-	_ = con.Close()
 }
 
 func ocAddressChecker() less.OnChannel {
