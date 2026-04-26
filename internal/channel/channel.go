@@ -3,11 +3,12 @@ package channel
 import (
 	"context"
 	"errors"
+	"net"
+	"sync/atomic"
+
 	"github.com/emove/less"
 	"github.com/emove/less/log"
 	"github.com/emove/less/transport"
-	"net"
-	"sync/atomic"
 )
 
 const (
