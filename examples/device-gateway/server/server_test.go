@@ -204,6 +204,9 @@ func TestAuthHandlerInvalidSecretReturnsError(t *testing.T) {
 	if !errors.Is(err, errInvalidSecret) {
 		t.Fatalf("authHandler() error = %v, want %v", err, errInvalidSecret)
 	}
+	if !ch.closed {
+		t.Fatal("channel closed = false, want true")
+	}
 }
 
 func TestAuthHandlerDuplicateAuthReturnsError(t *testing.T) {
@@ -219,6 +222,9 @@ func TestAuthHandlerDuplicateAuthReturnsError(t *testing.T) {
 	err := authHandler(gw)(context.Background(), ch, protocol.Auth("dev-001", demoSecret))
 	if !errors.Is(err, errDuplicateAuth) {
 		t.Fatalf("authHandler() error = %v, want %v", err, errDuplicateAuth)
+	}
+	if !ch.closed {
+		t.Fatal("channel closed = false, want true")
 	}
 }
 

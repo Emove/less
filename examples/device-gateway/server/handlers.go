@@ -59,9 +59,11 @@ func authHandler(gw *gateway) less.Handler {
 			return errSessionMissing
 		}
 		if sess.authenticated {
+			ch.Close(errDuplicateAuth)
 			return errDuplicateAuth
 		}
 		if auth.Secret != demoSecret {
+			ch.Close(errInvalidSecret)
 			return errInvalidSecret
 		}
 		if err := ch.Write(protocol.AuthAck("ok")); err != nil {

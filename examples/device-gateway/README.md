@@ -43,20 +43,20 @@ The outer packet codec then prefixes that payload with the standard variable-len
 
 ## Read the files in this order
 
-1. [`protocol/message.go`](/Users/emov/workspace/projects/personal/less/examples/device-gateway/protocol/message.go): message types and protocol constants
-2. [`protocol/codec.go`](/Users/emov/workspace/projects/personal/less/examples/device-gateway/protocol/codec.go): custom payload encode/decode
-3. [`server/handlers.go`](/Users/emov/workspace/projects/personal/less/examples/device-gateway/server/handlers.go): channel hooks, router, and handlers
-4. [`server/registry.go`](/Users/emov/workspace/projects/personal/less/examples/device-gateway/server/registry.go): session state
-5. [`server/main.go`](/Users/emov/workspace/projects/personal/less/examples/device-gateway/server/main.go): server wiring
-6. [`device/main.go`](/Users/emov/workspace/projects/personal/less/examples/device-gateway/device/main.go): device simulator wiring
-7. [`server/server_test.go`](/Users/emov/workspace/projects/personal/less/examples/device-gateway/server/server_test.go): end-to-end flow assertions
+1. [`protocol/message.go`](./protocol/message.go): message types and protocol constants
+2. [`protocol/codec.go`](./protocol/codec.go): custom payload encode/decode
+3. [`server/handlers.go`](./server/handlers.go): channel hooks, router, and handlers
+4. [`server/registry.go`](./server/registry.go): session state
+5. [`server/main.go`](./server/main.go): server wiring
+6. [`device/main.go`](./device/main.go): device simulator wiring
+7. [`server/server_test.go`](./server/server_test.go): end-to-end flow assertions
 
 ## Where the framework touchpoints are
 
-- `OnChannel`: [`server/handlers.go`](/Users/emov/workspace/projects/personal/less/examples/device-gateway/server/handlers.go), `onChannel`
-- `Router`: [`server/handlers.go`](/Users/emov/workspace/projects/personal/less/examples/device-gateway/server/handlers.go), `newRouter`; and [`device/main.go`](/Users/emov/workspace/projects/personal/less/examples/device-gateway/device/main.go), `deviceRouter`
-- `Channel.Write`: server replies in `authHandler` and `telemetryHandler`; device writes auth/telemetry/heartbeat in [`device/main.go`](/Users/emov/workspace/projects/personal/less/examples/device-gateway/device/main.go)
-- `OnChannelClosed`: [`server/handlers.go`](/Users/emov/workspace/projects/personal/less/examples/device-gateway/server/handlers.go), `onChannelClosed`; device-side shutdown hook is in `newDeviceClient`
+- `OnChannel`: [`server/handlers.go`](./server/handlers.go), `onChannel`
+- `Router`: [`server/handlers.go`](./server/handlers.go), `newRouter`; and [`device/main.go`](./device/main.go), `deviceRouter`
+- `Channel.Write`: server replies in `authHandler` and `telemetryHandler`; device writes auth/telemetry/heartbeat in [`device/main.go`](./device/main.go)
+- `OnChannelClosed`: [`server/handlers.go`](./server/handlers.go), `onChannelClosed`; device-side shutdown hook is in `newDeviceClient`
 
 ## Run it
 

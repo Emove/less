@@ -187,3 +187,67 @@ func TestCodecMarshalRejectsReservedDelimiters(t *testing.T) {
 		})
 	}
 }
+
+func TestCodecMarshalRejectsInvalidConstructibleMessages(t *testing.T) {
+	codec := NewCodec()
+
+	tests := []struct {
+		name    string
+		message any
+	}{
+		{
+			name:    "auth_empty_device_id",
+			message: Auth("", "demo-secret"),
+		},
+		{
+			name:    "auth_empty_secret",
+			message: Auth("dev-001", ""),
+		},
+		{
+			name:    "auth_ack_empty_status",
+			message: AuthAck(""),
+		},
+		{
+			name:    "telemetry_empty_metrics",
+			message: Telemetry(map[string]string{}),
+		},
+		{
+			name:    "telemetry_empty_value",
+			message: Telemetry(map[string]string{"temp": ""}),
+		},
+		{
+			name:    "command_empty_name",
+			message: Command(7, ""),
+		},
+		{
+			name:    "command_ack_empty_status",
+			message: CommandAck(7, ""),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			frame, err := codec.Marshal(tt.message)
+			if !errors.Is(err, ErrMalformedBody) {
+				t.Fatalf("Marshal() error = %v, want %v", err, ErrMalformedBody)
+			}
+			if frame != nil {
+				t.Fatalf("Marshal() frame = %#v, want nil", frame)
+			}
+		})
+	}
+}
+
+func TestCodecRejectsDuplicateBodyKeys(t *testing.T) {
+	codec := NewCodec()
+
+	payload := append([]byte{Version1, TypeTelemetry, 0, 0, 0, 0, 0, 0, 0, 15}, []byte("temp=23;temp=24")...)
+
+	got, err := codec.Unmarshal(NewFrame(payload))
+	if !errors.Is(err, ErrMalformedBody) {
+		t.Fatalf("Unmarshal() error = %v, want %v", err, ErrMalformedBody)
+	}
+	if got != nil {
+		t.Fatalf("Unmarshal() message = %#v, want nil", got)
+	}
+}

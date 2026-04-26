@@ -241,7 +241,7 @@ func decodeMessage(header Header, values map[string]string) (any, error) {
 
 func encodeBody(values map[string]string) ([]byte, error) {
 	if len(values) == 0 {
-		return nil, nil
+		return nil, ErrMalformedBody
 	}
 
 	keys := make([]string, 0, len(values))
@@ -265,6 +265,9 @@ func encodeBody(values map[string]string) ([]byte, error) {
 }
 
 func validateBodyToken(value string) error {
+	if value == "" {
+		return ErrMalformedBody
+	}
 	if strings.ContainsAny(value, ";=") {
 		return fmt.Errorf("%w: reserved delimiter in %q", ErrMalformedBody, value)
 	}
@@ -280,6 +283,9 @@ func decodeBody(body []byte) (map[string]string, error) {
 	for _, part := range strings.Split(string(body), ";") {
 		pair := strings.SplitN(part, "=", 2)
 		if len(pair) != 2 || pair[0] == "" || pair[1] == "" {
+			return nil, ErrMalformedBody
+		}
+		if _, exists := values[pair[0]]; exists {
 			return nil, ErrMalformedBody
 		}
 		values[pair[0]] = pair[1]
